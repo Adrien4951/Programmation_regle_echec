@@ -1,6 +1,44 @@
 // Auteur Adrien et léni 
 //programme test regle jeu echec 
 //config : speed serial 115200 / PIN_LED : a modifer en fonction arduino uno et esp32
+
+
+
+#include <Wire.h>
+#include <Adafruit_NeoPixel.h>
+#include "A31301.h"
+#include "config.h"
+
+
+
+//-----------variables globales------------//
+
+#define LED_PIN     A4  // Broche GPIO de l'ESP32 --> A4 et Arduino UNO --> 2
+#define LED_COUNT    64   // Nombre de leds par module
+
+
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+// Fonction pour remplir les pixels un par un
+void colorWipe(uint32_t color, int wait) {
+  for(int i=0; i<strip.numPixels(); i++) {
+    strip.setPixelColor(i, color);
+    //strip.show();
+    delay(wait);
+  }
+}
+
+void setuLED(uint8_t addr_led, uint32_t color) {
+  strip.setPixelColor(tab_LED[addr_led]-1, color);
+  //strip.show();
+  //delay(10);
+}
+
+
+
+
+
+
+
 enum Couleur { VIDE, BLANC, NOIR };
 enum TypePiece {AUCUN, PION, CAVALIER, FOU, TOUR, DAME, ROI };
 
@@ -62,7 +100,7 @@ class Piece {
       // x et y peuvent rester ou être mis à -1
     }
 };
-
+void calculerDeplacements(Piece &p);
 
 Piece plateau[8][8];
 
@@ -74,11 +112,60 @@ void setup() {
     Serial.println("pas de serial");
   }
   Serial.println("Setup");
-  plateau[4][2].reset(CAVALIER, BLANC, 4, 2);
-  plateau[2][4].reset(PION, NOIR, 2, 4);
+  Wire.begin();  
+  strip.begin();           // Initialise la communication avec les LEDs
+  strip.show();            // Éteint tout au démarrage
+  strip.setBrightness(100); // Luminosité à environ 20% pour 50 (pour économiser le courant via USB)
+
 }
 
 void loop() {
+
+
+  //---------Gestion des cases du plateau-------- 
+    //Serial.println("-----------------");
+  Serial.write(0xAA); 
+  Serial.write(0xBB);
+  uint8_t checksum = 0;
+  int16_t ValeurZ=0;
+  //Etat = 0 (Noir), 1 (Blanc), 2 (Rien)
+  uint8_t etat = 0;
+
+    for(uint8_t k=0;k<8;k++){
+      for(uint8_t j=0;j<8;j++){  
+        if(presence_pion_blanc((j+(k*8)))){
+          //Serial.print("| B ");
+          setuLED((j+(k*8)),strip.Color(255, 255, 255));
+          etat = 1;
+          plateau[j][k].reset(CAVALIER, NOIR, j, k);
+          calculerDeplacements(plateau[j][k]);
+        }
+        else if(presence_pion_noir((j+(k*8)))){
+          //Serial.print("| N ");
+          setuLED((j+(k*8)),strip.Color(255, 255, 0));
+          etat = 0;
+        }
+        else{
+          //Serial.print("| - ");
+          setuLED((j+(k*8)),strip.Color(0, 0, 0));
+          etat = 2;
+        }
+        ValeurZ = getZ((j+(k*8)));
+        uint8_t highZ = (ValeurZ >> 8) & 0xFF;
+        uint8_t lowZ = ValeurZ & 0xFF;
+        Serial.write((j+(k*8)));
+        Serial.write(highZ);  // Valeur Z (partie haute)
+        Serial.write(lowZ);   // Valeur Z (partie basse)
+        Serial.write(etat);   // État du pion
+        checksum += ((j+(k*8)) + highZ + lowZ + etat);
+      }
+      //Serial.print("|\n");
+      //Serial.println("-----------------");  
+    }
+    Serial.write(checksum);
+
+
+
 if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
@@ -116,7 +203,6 @@ if (Serial.available() > 0) {
   }
 }
 
-
 void calculerDeplacements(Piece &p) {
   int x = p.getX();
   int y = p.getY();
@@ -152,19 +238,19 @@ void calculerDeplacements(Piece &p) {
           cassePossible++;
         }
     }
-      if (y + dirY >= 0 && y + dirY <= 7 && x + dirY >= 0 && x + dirY <= 7 && plateau[x + dirY][y + dirY].getType() != AUCUN && plateau[x + dirY][y + dirY].getCouleur() != maCouleur) 
-      {
-        X[cassePossible] = x + dirY;
-        Y[cassePossible] = y + dirY;
-        cassePossible++;
-      }
+    if (y + dirY >= 0 && y + dirY <= 7 && x + dirY >= 0 && x + dirY <= 7 && plateau[x + dirY][y + dirY].getType() != AUCUN && plateau[x + dirY][y + dirY].getCouleur() != maCouleur) 
+    {
+      X[cassePossible] = x + dirY;
+      Y[cassePossible] = y + dirY;
+      cassePossible++;
+    }
 
-      if (y + dirY >= 0 && y + dirY <= 7 && x - dirY >= 0 && x - dirY <= 7 && plateau[x - dirY][y + dirY].getType() != AUCUN && plateau[x - dirY][y + dirY].getCouleur() != maCouleur)
-      {
-        X[cassePossible] = x - dirY;
-        Y[cassePossible] = y + dirY;
-        cassePossible++;
-      }  
+    if (y + dirY >= 0 && y + dirY <= 7 && x - dirY >= 0 && x - dirY <= 7 && plateau[x - dirY][y + dirY].getType() != AUCUN && plateau[x - dirY][y + dirY].getCouleur() != maCouleur)
+    {
+      X[cassePossible] = x - dirY;
+      Y[cassePossible] = y + dirY;
+      cassePossible++;
+    }  
     
   }
 
@@ -230,14 +316,15 @@ void calculerDeplacements(Piece &p) {
   }
 
   Serial.println("Coup possible:");
-
+  strip.show();
   for(int i = 0; i<cassePossible; i++){
     Serial.print("X: ");
     Serial.print(X[i]);
     Serial.print(" | Y: ");
     Serial.println(Y[i]);
+    setuLED((X[i]+(Y[i]*8)),strip.Color(255, 0, 0));
   }
-
+  strip.show();
  
 }
 
