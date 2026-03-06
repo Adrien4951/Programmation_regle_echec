@@ -1,4 +1,4 @@
-#include "regle_echec.h"
+/*#include "regle_echec.h"
 #include "Arduino.h"
 
 
@@ -148,7 +148,7 @@ void calculerDeplacementsPion(Piece &p, Piece plateau[8][8]) {
 }
 
 
-
+*/
 
 
 
