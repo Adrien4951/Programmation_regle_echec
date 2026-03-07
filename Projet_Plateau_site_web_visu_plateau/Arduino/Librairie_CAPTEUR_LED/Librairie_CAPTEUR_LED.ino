@@ -124,7 +124,15 @@ public:
 void calculerDeplacements(Piece &p);
 void afficherPlateauSerial();
 Piece plateau[8][8];
+uint8_t memoire_plateau[64];  // État précédent (0:vide, 1:blanc, 2:noir)
+int8_t caseSoulevee = -1;     // -1 si rien n'est levé, sinon 0-63
+// Prototypes pour que l'Arduino reconnaisse les fonctions partout
+bool estDansCoupPossible(uint8_t index);
+uint8_t coordVersIndex(uint8_t x, uint8_t y);
+void gererLeveePiece(uint8_t index);
+void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurDetectee);
 
+uint8_t coupPossible[28];
 
 void setup() {
   // Initialize serial communication
@@ -137,7 +145,18 @@ void setup() {
   strip.begin();             // Initialise la communication avec les LEDs
   strip.show();              // Éteint tout au démarrage
   strip.setBrightness(100);  // Luminosité à environ 20% pour 50 (pour économiser le courant via USB)
+  initPiece();
+
+  // Initialiser la mémoire selon les pièces posées
+  for (uint8_t i = 0; i < 64; i++) {
+    if (presence_pion_blanc(i)) memoire_plateau[i] = 1;
+    else if (presence_pion_noir(i)) memoire_plateau[i] = 2;
+    else memoire_plateau[i] = 0;
+  }
 }
+int plateauN1[64];
+int plateauN2[64];
+
 
 void loop() {
 
@@ -151,37 +170,66 @@ void loop() {
   //Etat = 0 (Noir), 1 (Blanc), 2 (Rien)
   uint8_t etat = 0;
 
-  for (uint8_t k = 0; k < 8; k++) {
-    for (uint8_t j = 0; j < 8; j++) {
-      if (presence_pion_blanc((j + (k * 8)))) {
-        //Serial.print("| B ");
-        setuLED((j + (k * 8)), strip.Color(255, 255, 255));
-        etat = 1;
-        plateau[j][k].reset(FOU, NOIR, j, k);
-        calculerDeplacements(plateau[j][k]);
-      } else if (presence_pion_noir((j + (k * 8)))) {
-        //Serial.print("| N ");
-        setuLED((j + (k * 8)), strip.Color(255, 255, 0));
-        etat = 0;
-      } else {
-        //Serial.print("| - ");
-        setuLED((j + (k * 8)), strip.Color(0, 0, 0));
-        etat = 2;
-      }
-      ValeurZ = getZ((j + (k * 8)));
-      uint8_t highZ = (ValeurZ >> 8) & 0xFF;
-      uint8_t lowZ = ValeurZ & 0xFF;
-      Serial.write((j + (k * 8)));
-      Serial.write(highZ);  // Valeur Z (partie haute)
-      Serial.write(lowZ);   // Valeur Z (partie basse)
-      Serial.write(etat);   // État du pion
-      checksum += ((j + (k * 8)) + highZ + lowZ + etat);
-    }
-    //Serial.print("|\n");
-    //Serial.println("-----------------");
-  }
-  Serial.write(checksum);
 
+
+  //Serial.println("-----------------");
+
+  //Serial.write(checksum);
+  bool changementDetecte = false;
+  int8_t caseAction = -1;
+  uint8_t typeAction = 0;  // 0:rien, 1:levé, 2:posé
+
+
+  for (uint8_t i = 0; i < 64; i++) {
+    uint8_t etatCapteur = 0;
+    if (presence_pion_blanc(i)) etatCapteur = 1;
+    else if (presence_pion_noir(i)) etatCapteur = 2;
+
+    plateauN1[i] = etatCapteur;
+
+    // --- LOGIQUE D'AFFICHAGE DES LEDS ---
+    if (etatCapteur == 0) {
+      if (estDansCoupPossible(i) && caseSoulevee != -1) {
+        setuLED(i, strip.Color(0, 0, 255)); // Bleu (Aide)
+      } else {
+        setuLED(i, strip.Color(0, 0, 0)); 
+      }
+    } 
+    else {
+      if (caseSoulevee != -1) {
+        // Condition corrigée pour ne pas mettre les autres en rouge
+        if (i == caseSoulevee || estDansCoupPossible(i) || plateauN2[i] != 0) {
+          uint32_t couleur = (etatCapteur == 1) ? strip.Color(255, 255, 255) : strip.Color(255, 255, 0);
+          setuLED(i, couleur);
+        } else {
+          setuLED(i, strip.Color(255, 0, 0)); // ROUGE (Erreur de pose)
+        }
+      } else {
+        uint32_t couleur = (etatCapteur == 1) ? strip.Color(255, 255, 255) : strip.Color(255, 255, 0);
+        setuLED(i, couleur);
+      }
+    }
+
+    // --- LOGIQUE DE MOUVEMENT ---
+    if (plateauN1[i] != plateauN2[i]) {
+      if (plateauN1[i] == 0 && plateauN2[i] != 0 && caseSoulevee == -1) {
+        caseSoulevee = i;
+        gererLeveePiece(i);
+        plateauN2[i] = plateauN1[i]; 
+      } 
+      else if (plateauN1[i] != 0 && plateauN2[i] == 0 && caseSoulevee != -1) {
+        if (estDansCoupPossible(i) || i == caseSoulevee) {
+          gererPosePiece(caseSoulevee, i, etatCapteur); // Utilise etatCapteur ici
+          plateauN2[i] = plateauN1[i];
+          caseSoulevee = -1;
+          coupPossible[0] = 0; 
+        } else {
+          Serial.println("Mauvaise case !");
+        }
+      }
+    }
+  }
+  strip.show();
 
 
   if (Serial.available() > 0) {
@@ -302,17 +350,44 @@ void calculerDeplacements(Piece &p) {
 
   Serial.println("Coup possible:");
   //strip.show();
+  coupPossible[0] = cassePossible;
   for (int i = 0; i < cassePossible; i++) {
     Serial.print("X: ");
     Serial.print(X[i]);
     Serial.print(" | Y: ");
     Serial.println(Y[i]);
     setuLED((X[i] + (Y[i] * 8)), strip.Color(255, 0, 0));
+    coupPossible[i + 1] = coordVersIndex(X[i], Y[i]);
   }
   strip.show();
 }
 
+void initPiece() {
 
+  plateau[3][1].reset(PION, BLANC, 3, 1);
+  plateau[3][7].reset(PION, NOIR, 3, 7);
+  plateau[4][6].reset(PION, BLANC, 4, 6);
+  plateau[5][2].reset(PION, NOIR, 5, 2);
+
+  for (uint8_t k = 0; k < 8; k++) {
+    for (uint8_t j = 0; j < 8; j++) {
+      uint8_t i = j + (k * 8);
+      uint8_t etatActuel = 0;
+      //plateauN1[i] =
+      // 1. Détection de l'état actuel
+      if (presence_pion_blanc(i)) {
+        setuLED(i, strip.Color(255, 255, 255));
+        plateauN2[i] = 1;
+      } else if (presence_pion_noir(i)) {
+        setuLED(i, strip.Color(255, 255, 0));
+        plateauN2[i] = 2;
+      } else {
+        setuLED(i, strip.Color(0, 0, 0));
+        plateauN2[i] = 0;
+      }
+    }
+  }
+}
 
 
 void afficherPlateauSerial() {
@@ -348,4 +423,67 @@ void afficherPlateauSerial() {
     Serial.println();
     Serial.println("  +----+----+----+----+----+----+----+----+");
   }
+}
+
+void gererLeveePiece(uint8_t index) {
+  int x = index % 8;
+  int y = index / 8;
+  Serial.print("Levee en: ");
+  Serial.println(index);
+
+  if (plateau[x][y].getType() != AUCUN) {
+    calculerDeplacements(plateau[x][y]);
+  }
+}
+void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
+  int x1 = depart % 8; int y1 = depart / 8;
+  int x2 = arrivee % 8; int y2 = arrivee / 8;
+
+  // On vérifie si la couleur détectée par le capteur 
+  // correspond bien à la couleur de la pièce qu'on a soulevée
+  if (couleurPosee == plateau[x1][y1].getCouleur()) {
+      // Transfert des données
+      plateau[x2][y2] = plateau[x1][y1];
+      plateau[x2][y2].setPosition(x2, y2);
+      plateau[x1][y1].vider();
+      Serial.println("Mouvement synchronisé !");
+  } else {
+      Serial.println("Erreur : La couleur ne correspond pas !");
+  }
+}
+
+  /*if (coupValide) {
+    int x1 = depart % 8;
+    int y1 = depart / 8;
+    int x2 = arrivee % 8;
+    int y2 = arrivee / 8;
+
+    if (depart != arrivee) {
+      // TRANSFÉRER LA PIÈCE (Type et Couleur)
+      plateau[x2][y2] = plateau[x1][y1];
+      plateau[x2][y2].setPosition(x2, y2);
+      plateau[x1][y1].vider();  // Reset l'ancienne case
+      Serial.println("Mouvement Valide");
+    } else {
+      Serial.println("Mouvement Annule");
+    }
+  } else {
+    // Cas où la pièce est posée sur une case interdite
+    Serial.println("Coup INVALIDE !");
+    // Optionnel : Tu peux faire clignoter en rouge ici
+  }
+}*/
+
+uint8_t coordVersIndex(uint8_t x, uint8_t y) {
+  // Formule : Index = x + (y * 8)
+  // Exemple pour [3][1] : 3 + (1 * 8) = 11
+  return x + (y * 8);
+}
+
+
+bool estDansCoupPossible(uint8_t index) {
+  for (int c = 1; c <= coupPossible[0]; c++) {
+    if (coupPossible[c] == index) return true;
+  }
+  return false;
 }
