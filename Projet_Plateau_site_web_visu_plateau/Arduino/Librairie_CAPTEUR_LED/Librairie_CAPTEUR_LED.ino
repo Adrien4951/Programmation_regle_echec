@@ -33,15 +33,10 @@ void setuLED(uint8_t addr_led, uint32_t color) {
   //delay(10);
 }
 
-
-
-
-
-
-
 enum Couleur { VIDE,
                BLANC,
                NOIR };
+
 enum TypePiece { AUCUN,
                  PION,
                  CAVALIER,
@@ -160,7 +155,6 @@ int plateauN2[64];
 
 void loop() {
 
-
   //---------Gestion des cases du plateau--------
   //Serial.println("-----------------");
   Serial.write(0xAA);
@@ -169,8 +163,6 @@ void loop() {
   int16_t ValeurZ = 0;
   //Etat = 0 (Noir), 1 (Blanc), 2 (Rien)
   uint8_t etat = 0;
-
-
 
   //Serial.println("-----------------");
 
@@ -189,17 +181,20 @@ void loop() {
 
     // --- LOGIQUE D'AFFICHAGE DES LEDS ---
     if (etatCapteur == 0) {
-      if (estDansCoupPossible(i) && caseSoulevee != -1) {
-        setuLED(i, strip.Color(0, 0, 255)); // Bleu (Aide)
+      if (i == caseSoulevee && coupPossible[0] == 0 ) setuLED(i, strip.Color(255, 165, 0)); // on est sur la case soulevée cependant aucun coup n'est possible mettre en orange   
+      else if (estDansCoupPossible(i) && caseSoulevee != -1) {
+        setuLED(i, strip.Color(0, 0, 255)); // Bleu 
       } else {
         setuLED(i, strip.Color(0, 0, 0)); 
       }
     } 
     else {
-      if (caseSoulevee != -1) {
-        // Condition corrigée pour ne pas mettre les autres en rouge
+      if (caseSoulevee != -1) { // on est en mode piece soulevee
+
         if (i == caseSoulevee || estDansCoupPossible(i) || plateauN2[i] != 0) {
           uint32_t couleur = (etatCapteur == 1) ? strip.Color(255, 255, 255) : strip.Color(255, 255, 0);
+          if (estDansCoupPossible(i)) couleur = strip.Color(0, 0, 255);
+          Serial.println("coup possible : "+ String(coupPossible[0]));
           setuLED(i, couleur);
         } else {
           setuLED(i, strip.Color(255, 0, 0)); // ROUGE (Erreur de pose)
@@ -210,24 +205,56 @@ void loop() {
       }
     }
 
-    // --- LOGIQUE DE MOUVEMENT ---
-    if (plateauN1[i] != plateauN2[i]) {
-      if (plateauN1[i] == 0 && plateauN2[i] != 0 && caseSoulevee == -1) {
-        caseSoulevee = i;
-        gererLeveePiece(i);
-        plateauN2[i] = plateauN1[i]; 
-      } 
-      else if (plateauN1[i] != 0 && plateauN2[i] == 0 && caseSoulevee != -1) {
-        if (estDansCoupPossible(i) || i == caseSoulevee) {
-          gererPosePiece(caseSoulevee, i, etatCapteur); // Utilise etatCapteur ici
-          plateauN2[i] = plateauN1[i];
-          caseSoulevee = -1;
-          coupPossible[0] = 0; 
-        } else {
-          Serial.println("Mauvaise case !");
-        }
-      }
+// --- LOGIQUE DE MOUVEMENT ---
+if (plateauN1[i] != plateauN2[i]) {
+
+  // CAS 1 : ON SOULEVE UNE PIÈCE
+  if (plateauN1[i] == 0 && plateauN2[i] != 0 && caseSoulevee == -1) {
+    
+    // VERIFICATION DU TOUR
+    // plateauN2[i] contient la couleur de la pièce qui était là (1=Blanc, 2=Noir)
+    if ((tourDesBlancs && plateauN2[i] == 1) || (!tourDesBlancs && plateauN2[i] == 2)) {
+      caseSoulevee = i;
+      gererLeveePiece(i); // Calcule les coups normalement
+    } else {
+      caseSoulevee = i;
+      coupPossible[0] = 0; // TOUR ADVERSE : on vide les coups (la case passera en Orange)
+      Serial.println("Ce n'est pas votre tour !");
     }
+    plateauN2[i] = plateauN1[i]; 
+  } 
+
+  // CAS 2 : ON POSE UNE PIÈCE (VIDE)
+  else if (plateauN1[i] != 0 && plateauN2[i] == 0 && caseSoulevee != -1) {
+    if (estDansCoupPossible(i) || i == caseSoulevee) {
+      
+      // Si on a réellement bougé (pas une annulation), on change de tour
+      if (i != caseSoulevee) {
+        tourDesBlancs = !tourDesBlancs; // ALTERNANCE
+        Serial.print("Tour suivant : "); Serial.println(tourDesBlancs ? "BLANC" : "NOIR");
+      }
+
+      gererPosePiece(caseSoulevee, i, etatCapteur);
+      plateauN2[i] = plateauN1[i];
+      caseSoulevee = -1;
+      coupPossible[0] = 0; // Je le décommente pour nettoyer l'affichage
+    }
+  }
+
+  // CAS 3 : ON MANGE UNE PIÈCE (CAPTURE)
+  else if (plateauN1[i] != plateauN2[i] && plateauN1[i] != 0 && plateauN2[i] != 0 && caseSoulevee != -1) {
+    if (estDansCoupPossible(i)) {
+      
+      tourDesBlancs = !tourDesBlancs; // ALTERNANCE après capture
+      
+      gererPosePiece(caseSoulevee, i, etatCapteur); 
+      plateauN2[i] = plateauN1[i];
+      caseSoulevee = -1;
+      coupPossible[0] = 0;
+      Serial.println("Piece mangee ! Changement de tour.");
+    }
+  }
+}
   }
   strip.show();
 
@@ -284,7 +311,7 @@ void calculerDeplacements(Piece &p) {
   int dirBishop[4][2] = { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } };
 
 
-  int cassePossible = 0;
+  uint8_t cassePossible = 0;
   int X[40];
   int Y[40];
   // --- PION ---
@@ -348,7 +375,8 @@ void calculerDeplacements(Piece &p) {
     }
   }
 
-  Serial.println("Coup possible:");
+  Serial.println("Coup possibleeeee:");
+  Serial.println(cassePossible);
   //strip.show();
   coupPossible[0] = cassePossible;
   for (int i = 0; i < cassePossible; i++) {
@@ -364,8 +392,8 @@ void calculerDeplacements(Piece &p) {
 
 void initPiece() {
 
-  plateau[3][1].reset(PION, BLANC, 3, 1);
-  plateau[3][7].reset(PION, NOIR, 3, 7);
+  plateau[3][1].reset(FOU, BLANC, 3, 1);
+  plateau[3][7].reset(FOU, NOIR, 3, 7);
   plateau[4][6].reset(PION, BLANC, 4, 6);
   plateau[5][2].reset(PION, NOIR, 5, 2);
 
@@ -388,7 +416,6 @@ void initPiece() {
     }
   }
 }
-
 
 void afficherPlateauSerial() {
   Serial.println("\n    0    1    2    3    4    5    6    7   (X)");
@@ -451,28 +478,6 @@ void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
       Serial.println("Erreur : La couleur ne correspond pas !");
   }
 }
-
-  /*if (coupValide) {
-    int x1 = depart % 8;
-    int y1 = depart / 8;
-    int x2 = arrivee % 8;
-    int y2 = arrivee / 8;
-
-    if (depart != arrivee) {
-      // TRANSFÉRER LA PIÈCE (Type et Couleur)
-      plateau[x2][y2] = plateau[x1][y1];
-      plateau[x2][y2].setPosition(x2, y2);
-      plateau[x1][y1].vider();  // Reset l'ancienne case
-      Serial.println("Mouvement Valide");
-    } else {
-      Serial.println("Mouvement Annule");
-    }
-  } else {
-    // Cas où la pièce est posée sur une case interdite
-    Serial.println("Coup INVALIDE !");
-    // Optionnel : Tu peux faire clignoter en rouge ici
-  }
-}*/
 
 uint8_t coordVersIndex(uint8_t x, uint8_t y) {
   // Formule : Index = x + (y * 8)
