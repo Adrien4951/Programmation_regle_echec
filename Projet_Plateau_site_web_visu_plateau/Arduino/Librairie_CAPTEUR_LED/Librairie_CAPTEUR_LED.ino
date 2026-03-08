@@ -338,14 +338,14 @@ void initPiece() {
     plateau[i][1].reset(PION, BLANC, i, 1);
     plateau[i][6].reset(PION, NOIR, i, 6);
   }
-  plateau[0][0].reset(TOUR, BLANC, 0, 1);
-  plateau[1][0].reset(CAVALIER, BLANC, 1, 1);
-  plateau[2][0].reset(FOU, BLANC, 2, 1);
-  plateau[3][0].reset(DAME, BLANC, 3, 1);
-  plateau[4][0].reset(ROI, BLANC, 4, 1);
-  plateau[5][0].reset(FOU, BLANC, 5, 1);
-  plateau[6][0].reset(CAVALIER, BLANC, 6, 1);
-  plateau[7][0].reset(TOUR, BLANC, 7, 1);
+  plateau[0][0].reset(TOUR, BLANC, 0, 0);
+  plateau[1][0].reset(CAVALIER, BLANC, 1, 0);
+  plateau[2][0].reset(FOU, BLANC, 2, 0);
+  plateau[3][0].reset(DAME, BLANC, 3, 0);
+  plateau[4][0].reset(ROI, BLANC, 4, 0);
+  plateau[5][0].reset(FOU, BLANC, 5, 0);
+  plateau[6][0].reset(CAVALIER, BLANC, 6, 0);
+  plateau[7][0].reset(TOUR, BLANC, 7, 0);
 
   plateau[0][7].reset(TOUR, NOIR, 0, 7);
   plateau[1][7].reset(CAVALIER, NOIR, 1, 7);
@@ -416,6 +416,11 @@ void gererLeveePiece(uint8_t index) {
   int y = index / 8;
   Serial.print("Levee en: ");
   Serial.println(index);
+  Serial.print("Levee en: ");
+  Serial.print("X");
+  Serial.print(x);
+  Serial.print("Y");
+  Serial.print(y);
 
   if (plateau[x][y].getType() != AUCUN) {
     calculerDeplacements(plateau[x][y]);
