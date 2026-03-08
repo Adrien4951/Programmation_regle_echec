@@ -4,12 +4,15 @@
 
 //A FAIRE Problème 
 //
-// Le plateau n'est pas dans le bon sens Rotation
+// Le plateau n'est pas dans le bon sens de Rotation
 // il n'y a pas de mode echec 
 // le mode en passant ne marche pas 
 // ajouter la double verification entre le tableau et les case avant de commencé
 // ajouter un modde offset pour les capteurs
-//
+// MODE luminosité led 
+// MODE on commence par les blanc
+//mode fin de partie rouge 
+// ajouter quand le roi est simplement en echec mettre la case du roi en orange
 
 //test
 #include <Wire.h>
@@ -481,6 +484,8 @@ EtatJeu etat = verifierEtatDuJeu(prochainCamp);
 if (etat == MAT) {
     // Faire clignoter toutes les LEDs en rouge ou afficher un message [cite: 26]
     for(int i=0; i<64; i++) setuLED(i, strip.Color(255, 0, 0)); 
+    strip.show();
+    delay(2000);
 }
 
 }
