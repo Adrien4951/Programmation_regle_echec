@@ -53,7 +53,7 @@ void calculerDeplacements(Piece &p) {
   }
   int X[MAX_COUPS];
   int Y[MAX_COUPS];
-
+  SPE = Rien; 
   // 2. Utiliser la logique propre du fichier de ton amie
   int nbCoups = genererCoupsPossibles(p, X, Y);
   coupPossible[0] = nbCoups;  //interdit
@@ -167,6 +167,7 @@ int genererCoupsRoi(Piece &p, int X[], int Y[]) {
       for (int col = 5; col <= 6; col++) { if (plateau[col][ligneRoi].getType() != AUCUN) voieLibre = false; }
       if (voieLibre && !estCaseAttaquee(5, ligneRoi, (c == BLANC) ? NOIR : BLANC) && !estCaseAttaquee(6, ligneRoi, (c == BLANC) ? NOIR : BLANC)) {
         X[nb] = 6; Y[nb] = ligneRoi; nb++;
+        SPE = PetitRoque;
       }
     }
     // Grand roque (roi vers colonne 2, tour 0 -> 3)
@@ -175,6 +176,7 @@ int genererCoupsRoi(Piece &p, int X[], int Y[]) {
       for (int col = 1; col <= 3; col++) { if (plateau[col][ligneRoi].getType() != AUCUN) voieLibre = false; }
       if (voieLibre && !estCaseAttaquee(2, ligneRoi, (c == BLANC) ? NOIR : BLANC) && !estCaseAttaquee(3, ligneRoi, (c == BLANC) ? NOIR : BLANC)) {
         X[nb] = 2; Y[nb] = ligneRoi; nb++;
+        SPE = GrandRoque;
       }
     }
   }

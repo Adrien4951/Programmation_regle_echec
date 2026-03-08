@@ -7,6 +7,13 @@
 
 
 //-----------class-------------------//
+enum CoupSPE { Rien,
+               PetitRoque,
+               GrandRoque,
+               EnPassant,
+               Promotion };
+
+
 enum Couleur { VIDE,
                BLANC,
                NOIR };
@@ -94,6 +101,7 @@ public:
 // --- Variables globales partagées avec le .ino ---
 // Le mot-clé extern permet d'utiliser les variables créées dans le fichier principal
 extern Piece plateau[8][8];
+extern CoupSPE SPE;
 extern bool tourDesBlancs;
 extern int enPassantCol;
 extern int enPassantRow;

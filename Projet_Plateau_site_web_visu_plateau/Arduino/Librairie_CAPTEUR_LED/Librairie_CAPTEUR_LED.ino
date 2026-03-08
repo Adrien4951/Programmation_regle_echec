@@ -2,6 +2,14 @@
 //programme test regle jeu echec
 //config : speed serial 115200 / PIN_LED : a modifer en fonction arduino uno et esp32
 
+//A FAIRE Problème 
+//
+// Le plateau n'est pas dans le bon sens Rotation
+// il n'y a pas de mode echec 
+// le mode en passant ne marche pas 
+//
+//
+//
 
 //test
 #include <Wire.h>
@@ -47,6 +55,8 @@ void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurDetectee);
 void initPiece();
 uint8_t coupPossible[28];
 bool tourDesBlancs = true;  // Les blancs commencent toujours
+CoupSPE SPE;
+
 
 void setup() {
   // Initialize serial communication
@@ -352,7 +362,7 @@ void initPiece() {
   plateau[2][7].reset(FOU, NOIR, 2, 7);
   plateau[3][7].reset(DAME, NOIR, 3, 7);
   plateau[4][7].reset(ROI, NOIR, 4, 7);
-  plateau[5][7].reset(FOU, BLANC, 5, 7);
+  plateau[5][7].reset(FOU, NOIR, 5, 7);
   plateau[6][7].reset(CAVALIER, NOIR, 6, 7);
   plateau[7][7].reset(TOUR, NOIR, 7, 7);
 
