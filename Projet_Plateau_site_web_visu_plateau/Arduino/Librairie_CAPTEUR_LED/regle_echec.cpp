@@ -1,155 +1,313 @@
-/*#include "regle_echec.h"
-#include "Arduino.h"
+#include "regle_echec.h"
+
+//------------------État global du plateau------------------
+
+#define MAX_COUPS 40
+
+// Prise en passant : case cible (où le pion atterrit en prenant en passant). -1 = aucune.
+int enPassantCol = -1; // colonne de la case cible
+int enPassantRow = -1; // ligne de la case cible
+
+void calculerDeplacements(Piece &p);
+int genererCoupsPossibles(Piece &p, int X[], int Y[]);
+void afficherCoupsPossibles(int X[], int Y[], int nbCoups);
+void afficherPlateauSerial();
+void afficherPlateauLED();       // Met à jour les LEDs selon l'état du plateau
+void syncPlateauDepuisCapteurs(); // Lit les 64 capteurs et met à jour plateau (PION blanc/noir)
+void initPositionEnPassant();    // Réinit tour + en passant (plateau = capteurs)
+void appliquerCoup(int x1, int y1, int x2, int y2);  // Met à jour en passant + tour (plateau = capteurs)
+uint8_t coordVersIndex(int x, int y);
+
+// À appeler par le binôme quand il applique un coup :
+// - Après un double pas du pion : setEnPassantTarget(col, row) avec la case où un pion adverse peut atterrir en prenant en passant.
+// - Sinon (coup normal ou tour adverse) : clearEnPassantTarget().
+// - Prise en passant : quand le coup joué est une prise en passant, en plus du déplacement, retirer le pion capturé (à (colDest, rowDest - dirY) pour le camp qui vient de jouer).
+// - Roque : si le roi va en (6, ligneRoi) ou (2, ligneRoi), déplacer aussi la tour (7,ligneRoi)->(5,ligneRoi) ou (0,ligneRoi)->(3,ligneRoi).
+void setEnPassantTarget(int col, int row);
+void clearEnPassantTarget();
+
+//extern Piece plateau[8][8];  // plateau[x][y], x = colonne, y = ligne
+
+//bool tourBlanc = true;
+int fromX = -1, fromY = -1;  // Pièce en main : case d'origine (-1 = aucune)
+int possibleMoveX[MAX_COUPS], possibleMoveY[MAX_COUPS], nbPossibleMoves = 0;
+int captureRedCol = -1, captureRedRow = -1;  // Case à afficher en rouge (pièce mangée)
+unsigned long captureRedUntil = 0;           // Jusqu'à quel moment (millis)
+uint8_t prevType[64], prevColor[64];         // État précédent pour détecter soulèvement/pose
+uint8_t prevNb[64];
 
 
-enum Couleur { BLANC, NOIR };
-enum TypePiece {AUCUNE, PION, CAVALIER, FOU, TOUR, DAME, ROI };
 
-class Piece {
-  private:
-    TypePiece type;
-    Couleur couleur;
-    bool active;
-    int x, y;          // Coordonnées (0 à 7)
-    int nbDeplacements; // Pour gérer le premier pas du pion et le roque
 
-  public:
-    // Constructeur par défaut
-    Piece() : type(AUCUN), couleur(VIDE), active(false), x(-1), y(-1), nbDeplacements(0) {}
 
-    // Constructeur complet
-    Piece(TypePiece t, Couleur c, int posX, int posY) {
-      type = t;
-      couleur = c;
-      x = posX;
-      y = posY;
-      active = true;
-      nbDeplacements = 0;
+
+
+// Implémentation de ta fonction de dispatch
+void calculerDeplacements(Piece &p) {
+  Couleur maCouleur = p.getCouleur();
+    // 1. Vérifier si c'est le bon tour
+  if ((tourDesBlancs && maCouleur == NOIR) || (!tourDesBlancs && maCouleur == BLANC)) {
+      Serial.println("Coup INTERDIT : Ce n'est pas votre tour.");
+      coupPossible[0] = 100;  //interdit
+      return; 
+  }
+  int X[MAX_COUPS];
+  int Y[MAX_COUPS];
+
+  // 2. Utiliser la logique propre du fichier de ton amie
+  int nbCoups = genererCoupsPossibles(p, X, Y);
+  coupPossible[0] = nbCoups;  //interdit
+  afficherCoupsPossibles(X, Y, nbCoups);
+}
+
+
+// --- Logique de ton amie (extraite du fichier fourni) ---
+
+int genererCoupsPossibles(Piece &p, int X[], int Y[]) {
+    TypePiece t = p.getType(); 
+    int nb = 0;
+    switch (t) {
+        case PION:     nb = genererCoupsPion(p, X, Y); break; 
+        case FOU:      nb = genererCoupsFou(p, X, Y); break; 
+        case TOUR:     nb = genererCoupsTour(p, X, Y); break; 
+        case DAME:     nb = genererCoupsDame(p, X, Y); break; 
+        case CAVALIER: nb = genererCoupsCavalier(p, X, Y); break; 
+        case ROI:      nb = genererCoupsRoi(p, X, Y); break; 
+        default: break;
     }
+    filtrerCoupsEnEchec(p, X, Y, nb); 
+    return nb;
+}
 
-    // --- Getters ---
-    TypePiece getType() { return type; }
-    Couleur getCouleur() { return couleur; }
-    bool estActive() { return active; }
-    int getX() { return x; }
-    int getY() { return y; }
-    int getNbDeplacements() { return nbDeplacements; }
+// Pion : avance 1 ou 2, captures diagonales
+int genererCoupsPion(Piece &p, int X[], int Y[]) {
+  int x = p.getX(), y = p.getY(), n = p.getNbDeplacements();
+  Couleur c = p.getCouleur();
+  int dirY = (c == BLANC) ? 1 : -1;
+  int nb = 0;
 
-    // --- Setters ---
-    void setPosition(int newX, int newY) {
-      x = newX;
-      y = newY;
-      nbDeplacements++;
+  if (y + dirY < 0 || y + dirY > 7) return 0;
+
+  if (plateau[x][y + dirY].getType() == AUCUN) {
+    X[nb] = x; Y[nb] = y + dirY; nb++;
+    if (n == 0 && plateau[x][y + 2 * dirY].getType() == AUCUN) {
+      X[nb] = x; Y[nb] = y + 2 * dirY; nb++;
     }
-
-    void setActive(bool etat) {
-      active = etat;
+  }
+  for (int d = 0; d < 2; d++) {
+    int dx = (d == 0) ? 1 : -1;
+    int nx = x + dx;
+    if (nx >= 0 && nx <= 7 && plateau[nx][y + dirY].getType() != AUCUN && plateau[nx][y + dirY].getCouleur() != c) {
+      X[nb] = nx; Y[nb] = y + dirY; nb++;
     }
+  }
+  // Prise en passant : possible si une cible est définie sur la rangée devant nous (case vide)
+  if (enPassantCol >= 0 && enPassantRow == y + dirY && (enPassantCol == x + 1 || enPassantCol == x - 1) && plateau[enPassantCol][enPassantRow].getType() == AUCUN) {
+    X[nb] = enPassantCol; Y[nb] = enPassantRow; nb++;
+  }
+  return nb;
+}
 
-    // Utile pour le reset du jeu
-    void reset(TypePiece t, Couleur c, int posX, int posY) {
-      type = t;
-      couleur = c;
-      x = posX;
-      y = posY;
-      active = true;
-      nbDeplacements = 0;
-    }
-    void vider() {
-      type = AUCUN;
-      couleur = VIDE;
-      active = false;
-      nbDeplacements = 0;
-      // x et y peuvent rester ou être mis à -1
-    }
-};
+// Fou : déplacements en diagonale (réutilise ajouterCoupsDirection)
+int genererCoupsFou(Piece &p, int X[], int Y[]) {
+  const int dir[4][2] = { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } };
+  return ajouterCoupsDirections(p, dir, 4, X, Y);
+}
 
-void init_Partie(void){
-  // --- ÉTAPE 1 : TOUT SUPPRIMER ---
+// Tour : déplacements en ligne (réutilise ajouterCoupsDirection)
+int genererCoupsTour(Piece &p, int X[], int Y[]) {
+  const int dir[4][2] = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } };
+  return ajouterCoupsDirections(p, dir, 4, X, Y);
+}
+
+// Dame : Fou + Tour
+int genererCoupsDame(Piece &p, int X[], int Y[]) {
+  const int dir[8][2] = { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 }, { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } };
+  return ajouterCoupsDirections(p, dir, 8, X, Y);
+}
+
+// Cavalier : 8 cases en L
+int genererCoupsCavalier(Piece &p, int X[], int Y[]) {
+  const int dir[8][2] = { { -2, 1 }, { -1, 2 }, { 1, 2 }, { 2, 1 }, { 2, -1 }, { 1, -2 }, { -1, -2 }, { -2, -1 } };
+  int x = p.getX(), y = p.getY();
+  Couleur c = p.getCouleur();
+  int nb = 0;
+  for (int d = 0; d < 8; d++) {
+    int nx = x + dir[d][0], ny = y + dir[d][1];
+    if (nx >= 0 && nx <= 7 && ny >= 0 && ny <= 7) {
+      if (plateau[nx][ny].getType() == AUCUN || plateau[nx][ny].getCouleur() != c) {
+        X[nb] = nx; Y[nb] = ny; nb++;
+      }
+    }
+  }
+  return nb;
+}
+
+// Roi : 8 cases autour + roque si possible
+int genererCoupsRoi(Piece &p, int X[], int Y[]) {
+  const int dir[8][2] = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } };
+  int x = p.getX(), y = p.getY();
+  Couleur c = p.getCouleur();
+  int nb = 0;
+  for (int d = 0; d < 8; d++) {
+    int nx = x + dir[d][0], ny = y + dir[d][1];
+    if (nx >= 0 && nx <= 7 && ny >= 0 && ny <= 7) {
+      if (plateau[nx][ny].getType() == AUCUN || plateau[nx][ny].getCouleur() != c) {
+        X[nb] = nx; Y[nb] = ny; nb++;
+      }
+    }
+  }
+    // Roque : roi et tour jamais bougé, pas de pièce entre, roi et cases traversées non attaquées
+  if (p.getNbDeplacements() == 0 && !estCaseAttaquee(x, y, (c == BLANC) ? NOIR : BLANC)) {
+    int ligneRoi = (c == BLANC) ? 0 : 7;
+    if (y != ligneRoi) { return nb; }
+    // Petit roque (roi vers colonne 6, tour 7 -> 5)
+    if (plateau[7][ligneRoi].getType() == TOUR && plateau[7][ligneRoi].getCouleur() == c && plateau[7][ligneRoi].getNbDeplacements() == 0) {
+      bool voieLibre = true;
+      for (int col = 5; col <= 6; col++) { if (plateau[col][ligneRoi].getType() != AUCUN) voieLibre = false; }
+      if (voieLibre && !estCaseAttaquee(5, ligneRoi, (c == BLANC) ? NOIR : BLANC) && !estCaseAttaquee(6, ligneRoi, (c == BLANC) ? NOIR : BLANC)) {
+        X[nb] = 6; Y[nb] = ligneRoi; nb++;
+      }
+    }
+    // Grand roque (roi vers colonne 2, tour 0 -> 3)
+    if (plateau[0][ligneRoi].getType() == TOUR && plateau[0][ligneRoi].getCouleur() == c && plateau[0][ligneRoi].getNbDeplacements() == 0) {
+      bool voieLibre = true;
+      for (int col = 1; col <= 3; col++) { if (plateau[col][ligneRoi].getType() != AUCUN) voieLibre = false; }
+      if (voieLibre && !estCaseAttaquee(2, ligneRoi, (c == BLANC) ? NOIR : BLANC) && !estCaseAttaquee(3, ligneRoi, (c == BLANC) ? NOIR : BLANC)) {
+        X[nb] = 2; Y[nb] = ligneRoi; nb++;
+      }
+    }
+  }
+  return nb;
+}
+
+
+
+
+
+int ajouterCoupsDirections(Piece &p, const int dir[][2], int nbDir, int X[], int Y[]) {
+    int x = p.getX(), y = p.getY(); 
+    Couleur c = p.getCouleur();
+    int nb = 0;
+    for (int d = 0; d < nbDir; d++) {
+        for (int i = 1; i < 8; i++) {
+            int nx = x + i * dir[d][0], ny = y + i * dir[d][1]; 
+            if (nx < 0 || nx > 7 || ny < 0 || ny > 7) break; 
+            if (plateau[nx][ny].getType() == AUCUN) { 
+                X[nb] = nx; Y[nb] = ny; nb++;
+            } else {
+                if (plateau[nx][ny].getCouleur() != c) { 
+                    X[nb] = nx; Y[nb] = ny; nb++;
+                }
+                break; 
+            }
+        }
+    }
+    return nb; 
+}
+
+//------------------Prise en passant : API pour le binôme------------------
+
+void setEnPassantTarget(int col, int row) {
+  enPassantCol = col;
+  enPassantRow = row;
+}
+
+void clearEnPassantTarget() {
+  enPassantCol = -1;
+  enPassantRow = -1;
+}
+
+//------------------Vérification échec / case attaquée------------------
+
+// Retourne true si la case (cx, cy) est attaquée par au moins une pièce de la couleur parQui
+bool estCaseAttaquee(int cx, int cy, Couleur parQui) {
+  const int dirCavalier[8][2] = { { -2, 1 }, { -1, 2 }, { 1, 2 }, { 2, 1 }, { 2, -1 }, { 1, -2 }, { -1, -2 }, { -2, -1 } };
+  const int dirRoi[8][2] = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } };
   for (int i = 0; i < 8; i++) {
     for (int j = 0; j < 8; j++) {
-      plateau[i][j].vider(); 
+      Piece &q = plateau[i][j];
+      if (q.getType() == AUCUN || q.getCouleur() != parQui) continue;
+      int px = q.getX(), py = q.getY();
+      TypePiece tp = q.getType();
+      if (tp == PION) {
+        int dy = (parQui == BLANC) ? 1 : -1;
+        if (cy == py + dy && (cx == px + 1 || cx == px - 1)) return true;
+      } else if (tp == CAVALIER) {
+        for (int d = 0; d < 8; d++) {
+          if (px + dirCavalier[d][0] == cx && py + dirCavalier[d][1] == cy) return true;
+        }
+      } else if (tp == ROI) {
+        for (int d = 0; d < 8; d++) {
+          if (px + dirRoi[d][0] == cx && py + dirRoi[d][1] == cy) return true;
+        }
+      } else if (tp == FOU || tp == TOUR || tp == DAME) {
+        int dx = (cx > px) ? 1 : (cx < px) ? -1 : 0;
+        int dy = (cy > py) ? 1 : (cy < py) ? -1 : 0;
+        if (dx == 0 && dy == 0) continue;
+        if (tp == FOU && (dx == 0 || dy == 0)) continue;
+        if (tp == TOUR && dx != 0 && dy != 0) continue;
+        int steps = (abs(cx - px) > abs(cy - py)) ? abs(cx - px) : abs(cy - py);
+        if (px + steps * dx != cx || py + steps * dy != cy) continue;  // (cx,cy) pas sur la ligne
+        bool bloque = false;
+        for (int s = 1; s < steps; s++) {
+          int nx = px + s * dx, ny = py + s * dy;
+          if (plateau[nx][ny].getType() != AUCUN) { bloque = true; break; }
+        }
+        if (!bloque) return true;
+      }
     }
   }
-  // --- ÉTAPE 2 : ajoute les pièces ---
-  // Exemple : Placer les tours blanches
-  plateau[0][0].reset(TOUR, BLANC, 0, 0);
-  plateau[7][0].reset(TOUR, BLANC, 7, 0);
-
-  plateau[1][0].reset(CAVALIER, BLANC, 1, 0);
-  plateau[6][0].reset(CAVALIER, BLANC, 6, 0);
-
-  plateau[2][0].reset(FOU, BLANC, 2, 0);
-  plateau[5][0].reset(FOU, BLANC, 5, 0);
-
-  plateau[3][0].reset(ROI, BLANC, 3, 0);
-  plateau[4][0].reset(DAME, BLANC, 4, 0);
-  // Exemple : Placer les pions noirs
-  for(int i = 0; i < 8; i++) {
-    plateau[i][1].reset(PION, BLANC, i, 1);
-  }
-
-  // Exemple : Placer les tours blanches
-  plateau[0][7].reset(TOUR, NOIR, 0, 0);
-  plateau[7][7].reset(TOUR, NOIR, 7, 0);
-
-  plateau[1][7].reset(CAVALIER, NOIR, 1, 0);
-  plateau[6][7].reset(CAVALIER, NOIR, 6, 0);
-
-  plateau[2][7].reset(FOU, NOIR, 2, 0);
-  plateau[5][7].reset(FOU, NOIR, 5, 0);
-
-  plateau[3][7].reset(ROI, NOIR, 3, 0);
-  plateau[4][7].reset(DAME, NOIR, 4, 0);
-  // Exemple : Placer les pions noirs
-  for(int i = 0; i < 8; i++) {
-    plateau[i][1].reset(PION, NOIR, i, 1);
-  }
+  return false;
 }
 
-// Cette fonction pourrait être dans votre classe ou en dehors
-void calculerDeplacementsPion(Piece &p, Piece plateau[8][8]) {
-  int x = p.getX();
-  int y = p.getY();
-  int direction = (p.getCouleur() == BLANC) ? -1 : 1; 
-
-  Serial.print("Analyse Pion en ["); Serial.print(x); Serial.print(","); Serial.print(y); Serial.println("]");
-
-  // 1. Avance d'une case
-  int nextY = y + direction;
-  if (nextY >= 0 && nextY <= 7) {
-    if (plateau[x][nextY].getType() == AUCUN) {
-      allumerLED(x, nextY);
-      Serial.print("  -> Case libre detectee en ["); Serial.print(x); Serial.print(","); Serial.print(nextY); Serial.println("]");
-
-      // 2. Avance de deux cases (premier coup)
-      if (p.getNbDeplacements() == 0) {
-        int doubleNextY = y + (2 * direction);
-        if (doubleNextY >= 0 && doubleNextY <= 7 && plateau[x][doubleNextY].getType() == AUCUN) {
-          allumerLED(x, doubleNextY);
-          Serial.print("  -> Premier coup : double pas possible en ["); Serial.print(x); Serial.print(","); Serial.print(doubleNextY); Serial.println("]");
-        }
-      }
+// Enlève de X[], Y[] les coups qui laisseraient notre roi en échec (modifie nb)
+// Simulation sans appeler setPosition pour ne pas modifier nbDeplacements.
+void filtrerCoupsEnEchec(Piece &p, int X[], int Y[], int &nb) {
+  int fromX = p.getX(), fromY = p.getY();
+  Couleur nous = p.getCouleur();
+  Couleur adversaire = (nous == BLANC) ? NOIR : BLANC;
+  for (int i = 0; i < nb; i++) {
+    int toX = X[i], toY = Y[i];
+    Piece sauveDest = plateau[toX][toY];
+    plateau[toX][toY] = plateau[fromX][fromY];
+    plateau[fromX][fromY].vider();
+    int roiX, roiY;
+    if (plateau[toX][toY].getType() == ROI) { roiX = toX; roiY = toY; }
+    else {
+      roiX = -1; roiY = -1;
+      for (int a = 0; a < 8 && roiX < 0; a++)
+        for (int b = 0; b < 8; b++)
+          if (plateau[a][b].getType() == ROI && plateau[a][b].getCouleur() == nous) { roiX = a; roiY = b; break; }
     }
-
-    // 3. Captures en diagonale
-    int diagX[] = {x - 1, x + 1};
-    for (int dx : diagX) {
-      if (dx >= 0 && dx <= 7) {
-        Piece cible = plateau[dx][nextY];
-        // On vérifie si la case contient un ennemi
-        if (cible.getType() != AUCUN && cible.getCouleur() != p.getCouleur()) {
-          allumerLED(dx, nextY);
-          Serial.print("  !!! CAPTURE possible en ["); Serial.print(dx); Serial.print(","); Serial.print(nextY); Serial.println("]");
-        }
-      }
+    bool enEchec = estCaseAttaquee(roiX, roiY, adversaire);
+    plateau[fromX][fromY] = plateau[toX][toY];
+    plateau[toX][toY] = sauveDest;
+    if (enEchec) {
+      X[i] = X[nb - 1]; Y[i] = Y[nb - 1];
+      nb--;
+      i--;
     }
   }
 }
 
+//------------------Affichage des coups (à personnaliser)------------------
 
-*/
+// Affiche les coups possibles : Serial + LEDs. Modifier ici pour changer l'affichage.
+void afficherCoupsPossibles(int X[], int Y[], int nbCoups) {
+  Serial.println("Coup possible:");
+  for (int i = 0; i < nbCoups; i++) {
+    Serial.print("X: ");
+    Serial.print(X[i]);
+    Serial.print(" | Y: ");
+    Serial.println(Y[i]);
+    coupPossible[i + 1] = coordVersIndex(X[i], Y[i]);
+    //setuLED(X[i] + Y[i] * 8, strip.Color(0, 0, 255));  // LED bleue = case atteignable
+  }
+}
 
-
-
-
+uint8_t coordVersIndex(int x, int y) {
+  // Formule : Index = x + (y * 8)
+  // Exemple pour [3][1] : 3 + (1 * 8) = 11
+  return x + (y * 8);
+}

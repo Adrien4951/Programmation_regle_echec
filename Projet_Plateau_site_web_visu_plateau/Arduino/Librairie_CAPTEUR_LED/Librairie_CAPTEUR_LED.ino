@@ -8,7 +8,7 @@
 #include <Adafruit_NeoPixel.h>
 #include "A31301.h"
 #include "config.h"
-
+#include "regle_echec.h"
 
 
 //-----------variables globales------------//
@@ -33,90 +33,8 @@ void setuLED(uint8_t addr_led, uint32_t color) {
   //delay(10);
 }
 
-enum Couleur { VIDE,
-               BLANC,
-               NOIR };
 
-enum TypePiece { AUCUN,
-                 PION,
-                 CAVALIER,
-                 FOU,
-                 TOUR,
-                 DAME,
-                 ROI };
-
-class Piece {
-private:
-  TypePiece type;
-  Couleur couleur;
-  bool active;
-  int x, y;            // Coordonnées (0 à 7)
-  int nbDeplacements;  // Pour gérer le premier pas du pion et le roque
-
-public:
-  // Constructeur par défaut
-  Piece()
-    : type(AUCUN), couleur(VIDE), active(false), x(-1), y(-1), nbDeplacements(0) {}
-
-  // Constructeur complet
-  Piece(TypePiece t, Couleur c, int posX, int posY) {
-    type = t;
-    couleur = c;
-    x = posX;
-    y = posY;
-    active = true;
-    nbDeplacements = 0;
-  }
-
-  // --- Getters ---
-  TypePiece getType() {
-    return type;
-  }
-  Couleur getCouleur() {
-    return couleur;
-  }
-  bool estActive() {
-    return active;
-  }
-  int getX() {
-    return x;
-  }
-  int getY() {
-    return y;
-  }
-  int getNbDeplacements() {
-    return nbDeplacements;
-  }
-
-  // --- Setters ---
-  void setPosition(int newX, int newY) {
-    x = newX;
-    y = newY;
-    nbDeplacements++;
-  }
-
-  void setActive(bool etat) {
-    active = etat;
-  }
-
-  // Utile pour le reset du jeu
-  void reset(TypePiece t, Couleur c, int posX, int posY) {
-    type = t;
-    couleur = c;
-    x = posX;
-    y = posY;
-    active = true;
-    nbDeplacements = 0;
-  }
-  void vider() {
-    type = AUCUN;
-    couleur = VIDE;
-    active = false;
-    nbDeplacements = 0;
-    // x et y peuvent rester ou être mis à -1
-  }
-};
-void calculerDeplacements(Piece &p);
+extern void calculerDeplacements(Piece &p);
 void afficherPlateauSerial();
 Piece plateau[8][8];
 uint8_t memoire_plateau[64];  // État précédent (0:vide, 1:blanc, 2:noir)
@@ -313,7 +231,7 @@ void UpdateLED() {
 
 
 
-
+/*
 void calculerDeplacements(Piece &p) {
   int x = p.getX();
   int y = p.getY();
@@ -412,14 +330,31 @@ void calculerDeplacements(Piece &p) {
     Serial.println("Coup INTERDIT");
   }
   strip.show();
-}
+}*/
 
 void initPiece() {
 
-  plateau[3][1].reset(FOU, BLANC, 3, 1);
-  plateau[3][7].reset(FOU, NOIR, 3, 7);
-  plateau[4][6].reset(PION, BLANC, 4, 6);
-  plateau[5][2].reset(PION, NOIR, 5, 2);
+  for(int i=0; i<8;i++){
+    plateau[i][1].reset(PION, BLANC, i, 1);
+    plateau[i][6].reset(PION, NOIR, i, 6);
+  }
+  plateau[0][0].reset(TOUR, BLANC, 0, 1);
+  plateau[1][0].reset(CAVALIER, BLANC, 1, 1);
+  plateau[2][0].reset(FOU, BLANC, 2, 1);
+  plateau[3][0].reset(DAME, BLANC, 3, 1);
+  plateau[4][0].reset(ROI, BLANC, 4, 1);
+  plateau[5][0].reset(FOU, BLANC, 5, 1);
+  plateau[6][0].reset(CAVALIER, BLANC, 6, 1);
+  plateau[7][0].reset(TOUR, BLANC, 7, 1);
+
+  plateau[0][7].reset(TOUR, NOIR, 0, 7);
+  plateau[1][7].reset(CAVALIER, NOIR, 1, 7);
+  plateau[2][7].reset(FOU, NOIR, 2, 7);
+  plateau[3][7].reset(DAME, NOIR, 3, 7);
+  plateau[4][7].reset(ROI, NOIR, 4, 7);
+  plateau[5][7].reset(FOU, BLANC, 5, 7);
+  plateau[6][7].reset(CAVALIER, NOIR, 6, 7);
+  plateau[7][7].reset(TOUR, NOIR, 7, 7);
 
   for (uint8_t k = 0; k < 8; k++) {
     for (uint8_t j = 0; j < 8; j++) {
