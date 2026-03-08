@@ -126,8 +126,9 @@ bool estDansCoupPossible(uint8_t index);
 uint8_t coordVersIndex(uint8_t x, uint8_t y);
 void gererLeveePiece(uint8_t index);
 void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurDetectee);
-
+void initPiece();
 uint8_t coupPossible[28];
+bool tourDesBlancs = true;  // Les blancs commencent toujours
 
 void setup() {
   // Initialize serial communication
@@ -171,7 +172,7 @@ void loop() {
   int8_t caseAction = -1;
   uint8_t typeAction = 0;  // 0:rien, 1:levé, 2:posé
 
-
+  UpdateLED();
   for (uint8_t i = 0; i < 64; i++) {
     uint8_t etatCapteur = 0;
     if (presence_pion_blanc(i)) etatCapteur = 1;
@@ -179,82 +180,55 @@ void loop() {
 
     plateauN1[i] = etatCapteur;
 
-    // --- LOGIQUE D'AFFICHAGE DES LEDS ---
-    if (etatCapteur == 0) {
-      if (i == caseSoulevee && coupPossible[0] == 0 ) setuLED(i, strip.Color(255, 165, 0)); // on est sur la case soulevée cependant aucun coup n'est possible mettre en orange   
-      else if (estDansCoupPossible(i) && caseSoulevee != -1) {
-        setuLED(i, strip.Color(0, 0, 255)); // Bleu 
-      } else {
-        setuLED(i, strip.Color(0, 0, 0)); 
-      }
-    } 
-    else {
-      if (caseSoulevee != -1) { // on est en mode piece soulevee
+    // --- LOGIQUE DE MOUVEMENT ---
+    if (plateauN1[i] != plateauN2[i]) {
 
-        if (i == caseSoulevee || estDansCoupPossible(i) || plateauN2[i] != 0) {
-          uint32_t couleur = (etatCapteur == 1) ? strip.Color(255, 255, 255) : strip.Color(255, 255, 0);
-          if (estDansCoupPossible(i)) couleur = strip.Color(0, 0, 255);
-          Serial.println("coup possible : "+ String(coupPossible[0]));
-          setuLED(i, couleur);
-        } else {
-          setuLED(i, strip.Color(255, 0, 0)); // ROUGE (Erreur de pose)
+      // CAS 1 : ON SOULEVE UNE PIÈCE
+      // (Le capteur devient vide ET la mémoire était pleine ET on n'a rien en main)
+      if (plateauN1[i] == 0 && plateauN2[i] != 0 && caseSoulevee == -1) {
+        caseSoulevee = i;
+        gererLeveePiece(i);
+        if (i == caseSoulevee && coupPossible[0] == 0) setuLED(i, strip.Color(255, 165, 0));       // on est sur la case soulevée cependant aucun coup n'est possible mettre en orange
+        else if (i == caseSoulevee && coupPossible[0] == 100) setuLED(i, strip.Color(255, 0, 0));  // on est sur la case soulevée cependant ce n'est pas a lui de jouer mettre en rouge
+        plateauN2[i] = plateauN1[i];
+      } else if (plateauN1[i] == 0 && plateauN2[i] != 0 && caseSoulevee != -1) {
+        setuLED(i, strip.Color(0, 0, 0));
+      }
+
+      // CAS 2 : ON POSE UNE PIÈCE SUR UNE CASE VIDE
+      // (Le capteur devient plein ET la mémoire était vide ET on a une pièce en main)
+      else if (plateauN1[i] != 0 && plateauN2[i] == 0 && caseSoulevee != -1) {
+        if ((estDansCoupPossible(i) && coupPossible[0] != 100) || i == caseSoulevee) {
+          gererPosePiece(caseSoulevee, i, etatCapteur);
+          plateauN2[i] = plateauN1[i];
+          caseSoulevee = -1;
+          //coupPossible[0] = 0;
+          if (i != caseSoulevee) {
+            if (estDansCoupPossible(i) && coupPossible[0] != 100) {
+              tourDesBlancs = !tourDesBlancs;  // ALTERNANCE
+            }
+            Serial.print("Tour suivant : ");
+            Serial.println(tourDesBlancs ? "BLANC" : "NOIR");
+          }
+        } else setuLED(i, strip.Color(255, 0, 0));
+      } else if (plateauN1[i] != 0 && plateauN2[i] == 0 && caseSoulevee == -1) {  // si on pase une piece et aucune n'est soulevé alors rouge ( en mode ajoute de piece)
+        setuLED(i, strip.Color(255, 0, 0));
+      }
+
+      // CAS 3 : ON MANGE UNE PIÈCE (CAPTURE)
+      // (Le capteur change de couleur ET on a une pièce en main ET c'est un coup possible)
+      else if (plateauN1[i] != plateauN2[i] && plateauN1[i] != 0 && plateauN2[i] != 0 && caseSoulevee != -1) {
+        if (estDansCoupPossible(i)) {
+          // On appelle la même fonction : elle va écraser l'ancienne pièce par la nouvelle
+          gererPosePiece(caseSoulevee, i, etatCapteur);
+          plateauN2[i] = plateauN1[i];  // La mémoire enregistre la nouvelle couleur
+          caseSoulevee = -1;
+          coupPossible[0] = 0;
+          Serial.println("Piece mangee !");
+          tourDesBlancs = !tourDesBlancs;
         }
-      } else {
-        uint32_t couleur = (etatCapteur == 1) ? strip.Color(255, 255, 255) : strip.Color(255, 255, 0);
-        setuLED(i, couleur);
       }
     }
-
-// --- LOGIQUE DE MOUVEMENT ---
-if (plateauN1[i] != plateauN2[i]) {
-
-  // CAS 1 : ON SOULEVE UNE PIÈCE
-  if (plateauN1[i] == 0 && plateauN2[i] != 0 && caseSoulevee == -1) {
-    
-    // VERIFICATION DU TOUR
-    // plateauN2[i] contient la couleur de la pièce qui était là (1=Blanc, 2=Noir)
-    if ((tourDesBlancs && plateauN2[i] == 1) || (!tourDesBlancs && plateauN2[i] == 2)) {
-      caseSoulevee = i;
-      gererLeveePiece(i); // Calcule les coups normalement
-    } else {
-      caseSoulevee = i;
-      coupPossible[0] = 0; // TOUR ADVERSE : on vide les coups (la case passera en Orange)
-      Serial.println("Ce n'est pas votre tour !");
-    }
-    plateauN2[i] = plateauN1[i]; 
-  } 
-
-  // CAS 2 : ON POSE UNE PIÈCE (VIDE)
-  else if (plateauN1[i] != 0 && plateauN2[i] == 0 && caseSoulevee != -1) {
-    if (estDansCoupPossible(i) || i == caseSoulevee) {
-      
-      // Si on a réellement bougé (pas une annulation), on change de tour
-      if (i != caseSoulevee) {
-        tourDesBlancs = !tourDesBlancs; // ALTERNANCE
-        Serial.print("Tour suivant : "); Serial.println(tourDesBlancs ? "BLANC" : "NOIR");
-      }
-
-      gererPosePiece(caseSoulevee, i, etatCapteur);
-      plateauN2[i] = plateauN1[i];
-      caseSoulevee = -1;
-      coupPossible[0] = 0; // Je le décommente pour nettoyer l'affichage
-    }
-  }
-
-  // CAS 3 : ON MANGE UNE PIÈCE (CAPTURE)
-  else if (plateauN1[i] != plateauN2[i] && plateauN1[i] != 0 && plateauN2[i] != 0 && caseSoulevee != -1) {
-    if (estDansCoupPossible(i)) {
-      
-      tourDesBlancs = !tourDesBlancs; // ALTERNANCE après capture
-      
-      gererPosePiece(caseSoulevee, i, etatCapteur); 
-      plateauN2[i] = plateauN1[i];
-      caseSoulevee = -1;
-      coupPossible[0] = 0;
-      Serial.println("Piece mangee ! Changement de tour.");
-    }
-  }
-}
   }
   strip.show();
 
@@ -298,6 +272,48 @@ if (plateauN1[i] != plateauN2[i]) {
   }
 }
 
+void UpdateLED() {
+  for (uint8_t i = 0; i < 64; i++) {
+    uint8_t etatCapteur = 0;
+    if (presence_pion_blanc(i)) etatCapteur = 1;
+    else if (presence_pion_noir(i)) etatCapteur = 2;
+    // --- LOGIQUE D'AFFICHAGE DES LEDS coup possible ---
+
+    //------ pas de piece presente et casesoulevee-----//
+    if (etatCapteur == 0) {
+      if (estDansCoupPossible(i) && caseSoulevee != -1 && coupPossible[0] != 100) {
+        setuLED(i, strip.Color(0, 0, 255));  // Bleu
+      } else {
+        setuLED(i, strip.Color(0, 0, 0));
+      }
+      if (coupPossible[0] == 100 && caseSoulevee == i) setuLED(i, strip.Color(255, 0, 0));           // Ce n'est pas a la bonne couleur de jouer --> rouge
+      else if (coupPossible[0] != 100 && caseSoulevee == i) setuLED(i, strip.Color(255, 255, 255));  // Ce n'est pas a la bonne couleur de jouer --> rouge
+    }
+    //------ piece presente et casesoulevee-----//
+    else if (etatCapteur != 0 && caseSoulevee != -1) {
+      if (estDansCoupPossible(i) && coupPossible[0] != 100) {
+        setuLED(i, strip.Color(0, 0, 255));  // Bleu
+      } else {
+        setuLED(i, strip.Color(25, 25, 25));
+      }
+    }
+    //------ piece presente et pas de casesoulevee-----//
+    else if (etatCapteur != 0 && caseSoulevee == -1) {
+      //Serial.println("ok");
+      if (etatCapteur == 1 && tourDesBlancs == true) {
+        setuLED(i, strip.Color(255, 255, 255));
+        //Serial.println("mettre en blanc");
+      } else if (etatCapteur == 2 && tourDesBlancs == false) {
+        setuLED(i, strip.Color(255, 255, 255));
+      } else setuLED(i, strip.Color(25, 25, 25));
+    } else setuLED(i, strip.Color(0, 0, 0));
+  }
+}
+
+
+
+
+
 void calculerDeplacements(Piece &p) {
   int x = p.getX();
   int y = p.getY();
@@ -316,6 +332,10 @@ void calculerDeplacements(Piece &p) {
   int Y[40];
   // --- PION ---
   // --- PION ---
+
+
+
+
   if (t == PION) {
     int dirY = (maCouleur == BLANC) ? 1 : -1;
 
@@ -384,8 +404,12 @@ void calculerDeplacements(Piece &p) {
     Serial.print(X[i]);
     Serial.print(" | Y: ");
     Serial.println(Y[i]);
-    setuLED((X[i] + (Y[i] * 8)), strip.Color(255, 0, 0));
+    //setuLED((X[i] + (Y[i] * 8)), strip.Color(255, 0, 0));
     coupPossible[i + 1] = coordVersIndex(X[i], Y[i]);
+  }
+  if ((tourDesBlancs && maCouleur == NOIR) || (!tourDesBlancs && maCouleur == BLANC)) {
+    coupPossible[0] = 100;  //interdit
+    Serial.println("Coup INTERDIT");
   }
   strip.show();
 }
@@ -462,20 +486,25 @@ void gererLeveePiece(uint8_t index) {
     calculerDeplacements(plateau[x][y]);
   }
 }
-void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
-  int x1 = depart % 8; int y1 = depart / 8;
-  int x2 = arrivee % 8; int y2 = arrivee / 8;
 
-  // On vérifie si la couleur détectée par le capteur 
+
+void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
+  int x1 = depart % 8;
+  int y1 = depart / 8;
+  int x2 = arrivee % 8;
+  int y2 = arrivee / 8;
+
+  // On vérifie si la couleur détectée par le capteur
   // correspond bien à la couleur de la pièce qu'on a soulevée
+  if (depart == arrivee) return;
   if (couleurPosee == plateau[x1][y1].getCouleur()) {
-      // Transfert des données
-      plateau[x2][y2] = plateau[x1][y1];
-      plateau[x2][y2].setPosition(x2, y2);
-      plateau[x1][y1].vider();
-      Serial.println("Mouvement synchronisé !");
+    // Transfert des données
+    plateau[x2][y2] = plateau[x1][y1];
+    plateau[x2][y2].setPosition(x2, y2);
+    plateau[x1][y1].vider();
+    Serial.println("Mouvement synchronisé !");
   } else {
-      Serial.println("Erreur : La couleur ne correspond pas !");
+    Serial.println("Erreur : La couleur ne correspond pas !");
   }
 }
 
