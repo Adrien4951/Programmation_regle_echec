@@ -102,9 +102,29 @@ int genererCoupsPion(Piece &p, int X[], int Y[]) {
     }
   }
   // Prise en passant : possible si une cible est définie sur la rangée devant nous (case vide)
-  if (enPassantCol >= 0 && enPassantRow == y + dirY && (enPassantCol == x + 1 || enPassantCol == x - 1) && plateau[enPassantCol][enPassantRow].getType() == AUCUN) {
+  // --- DEBUG PRÉCIS POUR LA PRISE EN PASSANT ---
+Serial.println(F("--- Check En Passant ---"));
+Serial.print(F("Cible (Col, Row): ")); Serial.print(enPassantCol); Serial.print(F(", ")); Serial.println(enPassantRow);
+Serial.print(F("Pion actuel (x, y): ")); Serial.print(x); Serial.print(F(", ")); Serial.println(y);
+Serial.print(F("Cible attendue (y + dirY): ")); Serial.println(y + dirY);
+
+// Affichage des résultats des tests logiques
+Serial.print(F("1. enPassantCol >= 0 : ")); Serial.println(enPassantCol >= 0 ? "OUI" : "NON");
+Serial.print(F("2. enPassantRow == y + dirY : ")); Serial.println(enPassantRow == (y + dirY) ? "OUI" : "NON");
+Serial.print(F("3. Voisinage (x+1 ou x-1) : ")); Serial.println((enPassantCol == x + 1 || enPassantCol == x - 1) ? "OUI" : "NON");
+
+if (enPassantCol >= 0 && enPassantCol <= 7 && enPassantRow >= 0 && enPassantRow <= 7) {
+    Serial.print(F("4. Case d'arrivée AUCUN : ")); 
+    Serial.println(plateau[enPassantCol][enPassantRow].getType() == AUCUN ? "OUI" : "NON");
+}
+Serial.println(F("------------------------"));
+
+// Votre condition d'origine
+if (enPassantCol >= 0 && enPassantRow == y + dirY && (enPassantCol == x + 1 || enPassantCol == x - 1) && plateau[enPassantCol][enPassantRow].getType() == AUCUN) {
     X[nb] = enPassantCol; Y[nb] = enPassantRow; nb++;
-  }
+}
+
+//------------fin-----------------//
   return nb;
 }
 

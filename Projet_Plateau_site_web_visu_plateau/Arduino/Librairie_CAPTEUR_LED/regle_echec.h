@@ -123,5 +123,8 @@ int genererCoupsRoi(Piece &p, int X[], int Y[]);
 int ajouterCoupsDirections(Piece &p, const int dir[][2], int nbDir, int X[], int Y[]);
 bool estCaseAttaquee(int cx, int cy, Couleur parQui);
 void filtrerCoupsEnEchec(Piece &p, int X[], int Y[], int &nb);
+void setEnPassantTarget(int col, int row);
+void clearEnPassantTarget();
+
 
 #endif
