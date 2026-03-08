@@ -11,15 +11,18 @@
 // ajouter un modde offset pour les capteurs
 // MODE luminosité led 
 // MODE on commence par les blanc
+// mode exercice on peut retrouver des placements interesent sur internet et la proposer a jouer 
 //mode fin de partie rouge 
 // ajouter quand le roi est simplement en echec mettre la case du roi en orange
+// mode/fonction eccran 
 
-//test
+
 #include <Wire.h>
 #include <Adafruit_NeoPixel.h>
 #include "A31301.h"
 #include "config.h"
 #include "regle_echec.h"
+#include "RobotEchec.h"
 
 
 //-----------variables globales------------//
@@ -43,7 +46,6 @@ void setuLED(uint8_t addr_led, uint32_t color) {
   //strip.show();
   //delay(10);
 }
-
 
 extern void calculerDeplacements(Piece &p);
 void afficherPlateauSerial();
@@ -165,6 +167,28 @@ void loop() {
         }
       }
     }
+    // Dans le loop(), au moment où vous changez de tour [cite: 25, 31]
+if (caseSoulevee == -1 && tourDesBlancs == false) {
+    
+    Serial.println(F("Au tour du Robot (Noir)..."));
+    //delay(1000); // Petit délai pour le réalisme
+
+    CoupRobot decision = calculerMeilleurCoup(NOIR);
+
+    if (decision.x1 != -1) {
+        Serial.print(F("Robot suggère : "));
+        Serial.print(decision.x1); Serial.print(","); Serial.print(decision.y1);
+        Serial.print(F(" -> "));
+        Serial.print(decision.x2); Serial.print(","); Serial.println(decision.y2);
+
+        // --- AFFICHAGE VISUEL ---
+        // LED Violette sur la pièce à bouger [cite: 44]
+        setuLED(coordVersIndex(decision.x1, decision.y1), strip.Color(0, 255, 255));
+        // LED Cyan sur la case de destination [cite: 44]
+        setuLED(coordVersIndex(decision.x2, decision.y2), strip.Color(0, 255, 255));
+        strip.show(); 
+    }
+}
   }
   strip.show();
 
@@ -245,110 +269,6 @@ void UpdateLED() {
     } else setuLED(i, strip.Color(0, 0, 0));
   }
 }
-
-
-
-
-/*
-void calculerDeplacements(Piece &p) {
-  int x = p.getX();
-  int y = p.getY();
-  int nbrDeplacment = p.getNbDeplacements();
-  TypePiece t = p.getType();
-  Couleur maCouleur = p.getCouleur();
-
-  // Directions : {dx, dy}
-  int dirCavalier[8][2] = { { -2, 1 }, { -1, 2 }, { 1, 2 }, { 2, 1 }, { 2, -1 }, { 1, -2 }, { -1, -2 }, { -2, -1 } };
-  int dirRook[4][2] = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } };
-  int dirBishop[4][2] = { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } };
-
-
-  uint8_t cassePossible = 0;
-  int X[40];
-  int Y[40];
-  // --- PION ---
-  // --- PION ---
-
-
-
-
-  if (t == PION) {
-    int dirY = (maCouleur == BLANC) ? 1 : -1;
-
-    // Avance simple
-    if (y + dirY >= 0 && y + dirY <= 7 && plateau[x][y + dirY].getType() == AUCUN) {
-      X[cassePossible] = x;
-      Y[cassePossible] = y + dirY;
-      cassePossible++;
-
-      if (nbrDeplacment == 0 && plateau[x][y + 2 * dirY].getType() == AUCUN) {
-        X[cassePossible] = x;
-        Y[cassePossible] = y + 2 * dirY;
-        cassePossible++;
-      }
-    }
-    if (y + dirY >= 0 && y + dirY <= 7 && x + dirY >= 0 && x + dirY <= 7 && plateau[x + dirY][y + dirY].getType() != AUCUN && plateau[x + dirY][y + dirY].getCouleur() != maCouleur) {
-      X[cassePossible] = x + dirY;
-      Y[cassePossible] = y + dirY;
-      cassePossible++;
-    }
-
-    if (y + dirY >= 0 && y + dirY <= 7 && x - dirY >= 0 && x - dirY <= 7 && plateau[x - dirY][y + dirY].getType() != AUCUN && plateau[x - dirY][y + dirY].getCouleur() != maCouleur) {
-      X[cassePossible] = x - dirY;
-      Y[cassePossible] = y + dirY;
-      cassePossible++;
-    }
-  }
-
-  if (t == FOU) {
-    int directions[4][2] = { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } };
-    for (int d = 0; d < 4; d++) {
-      for (int i = 1; i < 8; i++) {
-        int nx = x + i * directions[d][0];
-        int ny = y + i * directions[d][1];
-
-        // 1. Vérifier si on sort du plateau
-        if (nx < 0 || nx > 7 || ny < 0 || ny > 7) break;
-
-        // 2. Case vide : on ajoute et on continue
-        if (plateau[nx][ny].getType() == AUCUN) {
-          X[cassePossible] = nx;
-          Y[cassePossible] = ny;
-          cassePossible++;
-        }
-        // 3. Pièce adverse : on ajoute la capture puis on s'arrête
-        else if (plateau[nx][ny].getCouleur() != maCouleur) {
-          X[cassePossible] = nx;
-          Y[cassePossible] = ny;
-          cassePossible++;
-          break;
-        }
-        // 4. Pièce alliée : on s'arrête immédiatement
-        else {
-          break;
-        }
-      }
-    }
-  }
-
-  Serial.println("Coup possibleeeee:");
-  Serial.println(cassePossible);
-  //strip.show();
-  coupPossible[0] = cassePossible;
-  for (int i = 0; i < cassePossible; i++) {
-    Serial.print("X: ");
-    Serial.print(X[i]);
-    Serial.print(" | Y: ");
-    Serial.println(Y[i]);
-    //setuLED((X[i] + (Y[i] * 8)), strip.Color(255, 0, 0));
-    coupPossible[i + 1] = coordVersIndex(X[i], Y[i]);
-  }
-  if ((tourDesBlancs && maCouleur == NOIR) || (!tourDesBlancs && maCouleur == BLANC)) {
-    coupPossible[0] = 100;  //interdit
-    Serial.println("Coup INTERDIT");
-  }
-  strip.show();
-}*/
 
 void initPiece() {
 
