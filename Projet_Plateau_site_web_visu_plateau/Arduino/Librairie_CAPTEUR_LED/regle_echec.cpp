@@ -37,11 +37,6 @@ uint8_t prevType[64], prevColor[64];         // État précédent pour détecter
 uint8_t prevNb[64];
 
 
-
-
-
-
-
 // Implémentation de ta fonction de dispatch
 void calculerDeplacements(Piece &p) {
   Couleur maCouleur = p.getCouleur();
@@ -103,7 +98,7 @@ int genererCoupsPion(Piece &p, int X[], int Y[]) {
   }
   // Prise en passant : possible si une cible est définie sur la rangée devant nous (case vide)
   // --- DEBUG PRÉCIS POUR LA PRISE EN PASSANT ---
-Serial.println(F("--- Check En Passant ---"));
+/*Serial.println(F("--- Check En Passant ---"));
 Serial.print(F("Cible (Col, Row): ")); Serial.print(enPassantCol); Serial.print(F(", ")); Serial.println(enPassantRow);
 Serial.print(F("Pion actuel (x, y): ")); Serial.print(x); Serial.print(F(", ")); Serial.println(y);
 Serial.print(F("Cible attendue (y + dirY): ")); Serial.println(y + dirY);
@@ -117,11 +112,13 @@ if (enPassantCol >= 0 && enPassantCol <= 7 && enPassantRow >= 0 && enPassantRow 
     Serial.print(F("4. Case d'arrivée AUCUN : ")); 
     Serial.println(plateau[enPassantCol][enPassantRow].getType() == AUCUN ? "OUI" : "NON");
 }
-Serial.println(F("------------------------"));
+Serial.println(F("------------------------"));*/
 
 // Votre condition d'origine
 if (enPassantCol >= 0 && enPassantRow == y + dirY && (enPassantCol == x + 1 || enPassantCol == x - 1) && plateau[enPassantCol][enPassantRow].getType() == AUCUN) {
     X[nb] = enPassantCol; Y[nb] = enPassantRow; nb++;
+    SPE = EnPassant;
+    coordSPE[0] = 10;
 }
 
 //------------fin-----------------//
@@ -190,6 +187,7 @@ int genererCoupsRoi(Piece &p, int X[], int Y[]) {
         SPE = PetitRoque;
       }
     }
+    
     // Grand roque (roi vers colonne 2, tour 0 -> 3)
     if (plateau[0][ligneRoi].getType() == TOUR && plateau[0][ligneRoi].getCouleur() == c && plateau[0][ligneRoi].getNbDeplacements() == 0) {
       bool voieLibre = true;

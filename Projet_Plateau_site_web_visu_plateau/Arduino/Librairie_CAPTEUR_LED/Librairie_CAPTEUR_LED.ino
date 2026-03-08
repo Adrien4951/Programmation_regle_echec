@@ -2,20 +2,28 @@
 //programme test regle jeu echec
 //config : speed serial 115200 / PIN_LED : a modifer en fonction arduino uno et esp32
 
-//A FAIRE Problème 
+//A FAIRE Problème
 //
 // Le plateau n'est pas dans le bon sens de Rotation
-// il n'y a pas de mode echec 
-// le mode en passant ne marche pas 
+// FAIT OK : il n'y a pas de mode echec
+// FAIT OK le mode en passant ne marche pas
+// Le mode roque petit et grand
+// FAIT OK le mode Promotion
 // ajouter la double verification entre le tableau et les case avant de commencé
 // ajouter un modde offset pour les capteurs
-// MODE luminosité led 
+// MODE luminosité led
 // MODE on commence par les blanc
-// mode exercice on peut retrouver des placements interesent sur internet et la proposer a jouer 
-//mode fin de partie rouge 
+// mode exercice on peut retrouver des placements interesent sur internet et la proposer a jouer
+// mode fin de partie rouge
 // ajouter quand le roi est simplement en echec mettre la case du roi en orange
-// mode/fonction eccran 
-
+// mode/fonction eccran
+// Le mode de jeu contre le robot permet d'ajouter +/- de profondeur dans le jeu 1,2,3 voir 4 en fonction de la ram cela serait comme la difficulté du jeu
+// activer ou non horloge
+// activé un mode timer mode deconte et mode compte
+// mode piece touché, piece jouée
+//le calcule du robot est fait en permanance calculer une fois et copier...
+//mode Robot obligatoir et pas obligatoir (jouer le coup proposé par le robot)
+//petit probleme quand je leve il me propose en case bleu les coups mais quand le leve le pion adverse pour le manger ca case s'eteint...
 
 #include <Wire.h>
 #include <Adafruit_NeoPixel.h>
@@ -61,9 +69,13 @@ void initPiece();
 uint8_t coupPossible[28];
 bool tourDesBlancs = true;  // Les blancs commencent toujours
 CoupSPE SPE;
+uint8_t coordSPE[4];
 extern void setEnPassantTarget(int col, int row);
 extern void clearEnPassantTarget();
-enum EtatJeu { NORMAL, ECHEC, MAT, PAT };
+enum EtatJeu { NORMAL,
+               ECHEC,
+               MAT,
+               PAT };
 EtatJeu verifierEtatDuJeu(Couleur campAuTrait);
 
 void setup() {
@@ -168,27 +180,31 @@ void loop() {
       }
     }
     // Dans le loop(), au moment où vous changez de tour [cite: 25, 31]
-if (caseSoulevee == -1 && tourDesBlancs == false) {
-    
-    Serial.println(F("Au tour du Robot (Noir)..."));
-    //delay(1000); // Petit délai pour le réalisme
+    if (caseSoulevee == -1 && tourDesBlancs == false) {
 
-    CoupRobot decision = calculerMeilleurCoup(NOIR);
+      //Serial.println(F("Au tour du Robot (Noir)..."));
+      //delay(1000); // Petit délai pour le réalisme
 
-    if (decision.x1 != -1) {
-        Serial.print(F("Robot suggère : "));
-        Serial.print(decision.x1); Serial.print(","); Serial.print(decision.y1);
+      CoupRobot decision = calculerMeilleurCoup(NOIR);
+
+      if (decision.x1 != -1) {
+        /*Serial.print(F("Robot suggère : "));
+        Serial.print(decision.x1);
+        Serial.print(",");
+        Serial.print(decision.y1);
         Serial.print(F(" -> "));
-        Serial.print(decision.x2); Serial.print(","); Serial.println(decision.y2);
+        Serial.print(decision.x2);
+        Serial.print(",");
+        Serial.println(decision.y2);*/
 
         // --- AFFICHAGE VISUEL ---
         // LED Violette sur la pièce à bouger [cite: 44]
         setuLED(coordVersIndex(decision.x1, decision.y1), strip.Color(0, 255, 255));
         // LED Cyan sur la case de destination [cite: 44]
         setuLED(coordVersIndex(decision.x2, decision.y2), strip.Color(0, 255, 255));
-        strip.show(); 
+        strip.show();
+      }
     }
-}
   }
   strip.show();
 
@@ -272,7 +288,7 @@ void UpdateLED() {
 
 void initPiece() {
 
-  for(int i=0; i<8;i++){
+  for (int i = 0; i < 8; i++) {
     plateau[i][1].reset(PION, BLANC, i, 1);
     plateau[i][6].reset(PION, NOIR, i, 6);
   }
@@ -375,39 +391,96 @@ void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
   // On vérifie si la couleur détectée par le capteur
   // correspond bien à la couleur de la pièce qu'on a soulevée
   if (depart == arrivee) return;
+
   if (couleurPosee == plateau[x1][y1].getCouleur()) {
     // Transfert des données
     plateau[x2][y2] = plateau[x1][y1];
     plateau[x2][y2].setPosition(x2, y2);
     //plateau[x1][y1].vider();
     Serial.println("Mouvement synchronisé !");
-//----gerer le en passant------//
+    //----gerer le en passant------//
     Piece &p = plateau[x1][y1];
+    if (p.getType() == PION && ((plateau[x2][y2].getY() == 7 && plateau[x2][y2].getCouleur() == BLANC) || (plateau[x2][y2].getY() == 0 && plateau[x2][y2].getCouleur() == NOIR))) SPE = Promotion;
     if (p.getType() == PION && (y2 - y1 == 2 || y2 - y1 == -2)) {
-    setEnPassantTarget(x2, (y1 + y2) / 2);
+      setEnPassantTarget(x2, (y1 + y2) / 2);
     } else {
       clearEnPassantTarget();
     }
-    } else {
-      Serial.println("Erreur : La couleur ne correspond pas !");
-    } 
-    plateau[x1][y1].vider();
 
-//mettre les cous spe
+    if (SPE != Rien) {
+      int BN;  //sens BLANC ou NOIR
+      switch (SPE) {
+        case PetitRoque:
+          if (plateau[x1][y1].getCouleur() == BLANC) BN = 0;
+          else BN = 7;
+          Serial.println("inverser le ROI et la tour");
+          setuLED(coordVersIndex(7, BN), strip.Color(255, 128, 0));
+          //setuLED(coordVersIndex(5, BN), strip.Color(255, 255, 255));
+          strip.show();
+          while (presence_pion_blanc(coordVersIndex(7 , BN)) || presence_pion_noir(coordVersIndex(7 , BN))); la condition ici ne passe pas a voir pk ?
+          setuLED(coordVersIndex(7, BN), strip.Color(255, 128, 0));
+          strip.show();
+          while (!presence_pion_blanc(coordVersIndex(5 , BN)) && !presence_pion_noir(coordVersIndex(5 , BN)));
+          modifier la case de la tour ca nouvelle coordonéé
+          //while ();
+          //plateau[x1][y1].vider();
+          break;
+        case GrandRoque:
+          Serial.println("inverser le ROI et la tour");
+          break;
+        case EnPassant:
+          Serial.println("En Passant");
+          Serial.println("index:");
+          Serial.println(coordVersIndex(x2, y2 + BN));
+          if (plateau[x1][y1].getCouleur() == BLANC) BN = -1;
+          else BN = 1;
+          setuLED(coordVersIndex(x2, y2 + BN), strip.Color(255, 0, 0));
+          strip.show();
+          delay(2000);
+          while (presence_pion_blanc(coordVersIndex(x2, y2 + BN)) || presence_pion_noir(coordVersIndex(x2, y2 + BN)));
+          Serial.println("Next");
+          plateau[x2][y2 + BN].vider();
+          plateauN2[coordVersIndex(x2, y2 + BN)] = 0;
+          break;
+        case Promotion:
+
+          Serial.println("Promotion choisir la piece : 1DAME | 2FOU | 3tour");
+          while (Serial.available() == 0) {
+          }
+          String cmd = Serial.readStringUntil('\n');
+          cmd.trim();
+          if (cmd == "1") {
+            plateau[x2][y2].reset(DAME, plateau[x2][y2].getCouleur(), x2, y2);
+          } else if (cmd == "2") {
+            plateau[x2][y2].reset(FOU, plateau[x2][y2].getCouleur(), x2, y2);
+          } else if (cmd == "3") {
+            plateau[x2][y2].reset(TOUR, plateau[x2][y2].getCouleur(), x2, y2);
+          }
+          break;
+
+          break;
+      }
+      SPE = Rien;
+    }
 
 
 
-//verif echec 
-Couleur prochainCamp = !tourDesBlancs ? BLANC : NOIR; 
-EtatJeu etat = verifierEtatDuJeu(prochainCamp);
 
-if (etat == MAT) {
-    // Faire clignoter toutes les LEDs en rouge ou afficher un message [cite: 26]
-    for(int i=0; i<64; i++) setuLED(i, strip.Color(255, 0, 0)); 
-    strip.show();
-    delay(2000);
-}
 
+    //verif echec
+    Couleur prochainCamp = !tourDesBlancs ? BLANC : NOIR;
+    EtatJeu etat = verifierEtatDuJeu(prochainCamp);
+
+    if (etat == MAT) {
+      // Faire clignoter toutes les LEDs en rouge ou afficher un message [cite: 26]
+      for (int i = 0; i < 64; i++) setuLED(i, strip.Color(255, 0, 0));
+      strip.show();
+      delay(2000);
+    }
+  } else {
+    Serial.println("Erreur : La couleur ne correspond pas !");
+  }
+  plateau[x1][y1].vider();
 }
 
 uint8_t coordVersIndex(uint8_t x, uint8_t y) {
@@ -429,56 +502,56 @@ bool estDansCoupPossible(uint8_t index) {
 
 
 EtatJeu verifierEtatDuJeu(Couleur campAuTrait) {
-    int roiX = -1, roiY = -1;
-    Couleur adversaire = (campAuTrait == BLANC) ? NOIR : BLANC;
+  int roiX = -1, roiY = -1;
+  Couleur adversaire = (campAuTrait == BLANC) ? NOIR : BLANC;
 
-    // 1. Trouver la position du Roi du camp au trait 
-    for (int x = 0; x < 8; x++) {
-        for (int y = 0; y < 8; y++) {
-            if (plateau[x][y].getType() == ROI && plateau[x][y].getCouleur() == campAuTrait) {
-                roiX = x;
-                roiY = y;
-                break;
-            }
-        }
+  // 1. Trouver la position du Roi du camp au trait
+  for (int x = 0; x < 8; x++) {
+    for (int y = 0; y < 8; y++) {
+      if (plateau[x][y].getType() == ROI && plateau[x][y].getCouleur() == campAuTrait) {
+        roiX = x;
+        roiY = y;
+        break;
+      }
     }
+  }
 
-    // 2. Vérifier si le Roi est attaqué (Échec) 
-    bool enEchec = estCaseAttaquee(roiX, roiY, adversaire); 
+  // 2. Vérifier si le Roi est attaqué (Échec)
+  bool enEchec = estCaseAttaquee(roiX, roiY, adversaire);
 
-    // 3. Vérifier s'il existe au moins UN coup légal pour ce camp 
-    bool auMoinsUnCoupPossible = false;
-    int tempX[40], tempY[40];
+  // 3. Vérifier s'il existe au moins UN coup légal pour ce camp
+  bool auMoinsUnCoupPossible = false;
+  int tempX[40], tempY[40];
 
-    for (int x = 0; x < 8; x++) {
-        for (int y = 0; y < 8; y++) {
-            if (plateau[x][y].getCouleur() == campAuTrait) {
-                // Cette fonction filtre déjà les coups qui laissent le roi en échec 
-                int nb = genererCoupsPossibles(plateau[x][y], tempX, tempY); 
-                if (nb > 0) {
-                    auMoinsUnCoupPossible = true;
-                    break;
-                }
-            }
+  for (int x = 0; x < 8; x++) {
+    for (int y = 0; y < 8; y++) {
+      if (plateau[x][y].getCouleur() == campAuTrait) {
+        // Cette fonction filtre déjà les coups qui laissent le roi en échec
+        int nb = genererCoupsPossibles(plateau[x][y], tempX, tempY);
+        if (nb > 0) {
+          auMoinsUnCoupPossible = true;
+          break;
         }
-        if (auMoinsUnCoupPossible) break;
+      }
     }
+    if (auMoinsUnCoupPossible) break;
+  }
 
-    // 4. Synthèse des résultats
-    if (enEchec) {
-        if (!auMoinsUnCoupPossible) {
-            Serial.println(F("ECHEC ET MAT !"));
-            return MAT;
-        } else {
-            Serial.println(F("ECHEC AU ROI !"));
-            return ECHEC;
-        }
+  // 4. Synthèse des résultats
+  if (enEchec) {
+    if (!auMoinsUnCoupPossible) {
+      Serial.println(F("ECHEC ET MAT !"));
+      return MAT;
     } else {
-        if (!auMoinsUnCoupPossible) {
-            Serial.println(F("PAT (Egalité) !"));
-            return PAT;
-        }
+      Serial.println(F("ECHEC AU ROI !"));
+      return ECHEC;
     }
+  } else {
+    if (!auMoinsUnCoupPossible) {
+      Serial.println(F("PAT (Egalité) !"));
+      return PAT;
+    }
+  }
 
-    return NORMAL;
+  return NORMAL;
 }

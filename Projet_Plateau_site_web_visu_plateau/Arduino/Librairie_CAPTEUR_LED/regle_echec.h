@@ -102,6 +102,7 @@ public:
 // Le mot-clé extern permet d'utiliser les variables créées dans le fichier principal
 extern Piece plateau[8][8];
 extern CoupSPE SPE;
+extern uint8_t coordSPE[4];
 extern bool tourDesBlancs;
 extern int enPassantCol;
 extern int enPassantRow;
