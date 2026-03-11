@@ -7,4 +7,5 @@ int16_t getY(uint8_t address);
 uint8_t Request_info(uint8_t address, uint8_t registerAddress);
 bool presence_pion_blanc(uint8_t num_capt);
 bool presence_pion_noir(uint8_t num_capt);
+void offset(uint8_t num_capt);
 #endif

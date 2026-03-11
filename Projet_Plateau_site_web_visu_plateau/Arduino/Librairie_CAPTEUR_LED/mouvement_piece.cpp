@@ -217,7 +217,7 @@ void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
       // Faire clignoter toutes les LEDs en rouge ou afficher un message [cite: 26]
       for (int i = 0; i < 64; i++) setuLED(i, strip.Color(255, 0, 0));
       strip.show();
-      delay(2000);
+      delay(20000);
     }
   } else {
     Serial.println("Erreur : La couleur ne correspond pas !");

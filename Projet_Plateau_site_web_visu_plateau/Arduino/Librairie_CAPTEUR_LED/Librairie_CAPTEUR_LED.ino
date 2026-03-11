@@ -9,7 +9,7 @@
 // FAIT OK le mode en passant ne marche pas
 // FAIT OK Le mode roque petit et grand
 // FAIT OK le mode Promotion
-// Faire une annimation pour le demarage 
+// Faire une annimation pour le demarage
 // ajouter la double verification entre le plateau et les cases avant de commencer
 // ajouter un modde offset pour les capteurs
 // MODE luminosité led
@@ -41,8 +41,8 @@
 //-----bouton-----//
 
 int menuActuel = 0;
-const int MAX_MENU = 3; // Nombre d'options
-String options[] = {"1. JOUER", "2. ROBOT", "3. TIMER", "4. EXIT"};
+const int MAX_MENU = 3;  // Nombre d'options
+String options[] = { "1. JOUER", "2. ROBOT", "3. TIMER", "4. EXIT" };
 
 
 
@@ -70,11 +70,11 @@ extern void clearEnPassantTarget();
 
 void setup() {
   // Initialisation de l'écran LCD
-  
+
   Wire.begin();
-  lcd.begin(); 
+  lcd.begin();
   lcd.backlight();
-  
+
   lcd.setCursor(0, 0);
   lcd.print("Echecs Ready");
   // Initialize serial communication
@@ -83,13 +83,20 @@ void setup() {
     Serial.println("pas de serial");
   }
   Serial.println("Setup");
- 
+
   strip.begin();             // Initialise la communication avec les LEDs
   strip.show();              // Éteint tout au démarrage
-  strip.setBrightness(100);  // Luminosité à environ 20% pour 50 (pour économiser le courant via USB)
+  strip.setBrightness(250);  // Luminosité à environ 20% pour 50 (pour économiser le courant via USB)
+  delay(5000);
+  Serial.println("offset");
+  for (uint8_t i = 0; i < 64; i++) {
+    offset(i);
+  }
+
   initPiece();
 
   // Initialiser la mémoire selon les pièces posées
+
   for (uint8_t i = 0; i < 64; i++) {
     if (presence_pion_blanc(i)) memoire_plateau[i] = 1;
     else if (presence_pion_noir(i)) memoire_plateau[i] = 2;
@@ -104,84 +111,14 @@ int plateauN2[64];
 
 void loop() {
 
- // gererMenu();
-// fonction qui lance mode jeu tout y est
+  // gererMenu();
+  // fonction qui lance mode jeu tout y est
   UpdateLED();
   UpdateCapteur();
-   
-}
-
-/*
-void majAffichageMenu() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("> MENU ECHECS <");
-  lcd.setCursor(0, 1);
-  lcd.print(options[menuActuel]);
-}
-
-void gererMenu() {
-  // Lire les boutons (LOW car en PULLUP)
-  bool gauche = (digitalRead(BTN_GAUCHE) == LOW);
-  bool droite = (digitalRead(BTN_DROITE) == LOW);
-  bool ok = (digitalRead(BTN_OK) == LOW);
-
-  if (gauche) {
-    menuActuel--;
-    if (menuActuel < 0) menuActuel = MAX_MENU;
-    majAffichageMenu();
-    delay(200); // Anti-rebond simple
-  }
-
-  if (droite) {
-    menuActuel++;
-    if (menuActuel > MAX_MENU) menuActuel = 0;
-    majAffichageMenu();
-    delay(200);
-  }
-
-  if (ok) {
-    executerAction();
-    delay(500); 
-  }
-}
-
-void executerAction() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Lancement...");
-  lcd.setCursor(0, 1);
-  lcd.print(options[menuActuel]);
-
-  // Ici tu ajouteras tes fonctions plus tard
-  if (menuActuel == 0) { 
-    // jouerPartie(); 
-  }
-  else if (menuActuel == 1) { 
-    // activerRobot(); 
-  }
-  
-  delay(2000); // Pour voir le message
-  majAffichageMenu();
-}
-
-void setupMenu() {
-  pinMode(BTN_GAUCHE, INPUT_PULLUP);
-  pinMode(BTN_DROITE, INPUT_PULLUP);
-  pinMode(BTN_OK, INPUT_PULLUP);
-  
-  lcd.begin();
-  lcd.backlight();
-  majAffichageMenu();
 }
 
 
-
-
-
-*/
-
-void UpdateCapteur(){
+void UpdateCapteur() {
   for (uint8_t i = 0; i < 64; i++) {
     uint8_t etatCapteur = 0;
     if (presence_pion_blanc(i)) etatCapteur = 1;
@@ -285,10 +222,21 @@ void UpdateCapteur(){
       }
     }
     if (cmd == "GO") {
-      plateau[2][4].reset(PION, NOIR, 2, 4);
+      initPiece();
+      for (uint8_t i = 0; i < 64; i++) {
+        if (presence_pion_blanc(i)) memoire_plateau[i] = 1;
+        else if (presence_pion_noir(i)) memoire_plateau[i] = 2;
+        else memoire_plateau[i] = 0;
+      }
+
+      clearEnPassantTarget();
+    }
+    if (cmd == "offset") {
+      for (uint8_t i = 0; i < 64; i++) {
+        offset(i);
+      }
+      Serial.println("Fin offset");
     }
   }
 }
-
-
 
