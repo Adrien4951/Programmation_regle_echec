@@ -3,6 +3,12 @@
 
 void initPiece() {
 
+
+  for (int y = 0; y < 8; y++) {
+    for (int x = 0; x < 8; x++) {
+      plateau[x][y].vider();
+    }
+  }
   for (int i = 0; i < 8; i++) {
     plateau[i][1].reset(PION, BLANC, i, 1);
     plateau[i][6].reset(PION, NOIR, i, 6);

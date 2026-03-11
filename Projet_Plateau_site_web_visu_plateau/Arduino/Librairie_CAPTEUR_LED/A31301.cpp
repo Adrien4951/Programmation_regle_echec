@@ -128,8 +128,12 @@ bool presence_pion_noir(uint8_t num_capt){
 }
 
 void offset(uint8_t num_capt){
-
-  SEUIL_CAPT[num_capt] = getZ(num_capt);
+  int a = 0;
+  for(int i = 0; i<10; i++){
+    a += getZ(num_capt);
+  }
+  a = a/10;
+  SEUIL_CAPT[num_capt] = a;
 }
 
 

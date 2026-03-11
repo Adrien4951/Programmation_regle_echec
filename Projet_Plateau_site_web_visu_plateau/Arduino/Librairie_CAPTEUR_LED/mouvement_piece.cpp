@@ -1,5 +1,6 @@
 #include "mouvement_piece.h"
-
+#include "Arduino.h"
+extern void traiterBoutons();
 // Définition des variables extern
 Piece plateau[8][8];
 uint8_t coupPossible[28];
@@ -24,6 +25,7 @@ bool estDansCoupPossible(uint8_t index) {
 
 void UpdateLED() {
   for (uint8_t i = 0; i < 64; i++) {
+    traiterBoutons();
     uint8_t etatCapteur = 0;
     if (presence_pion_blanc(i)) etatCapteur = 1;
     else if (presence_pion_noir(i)) etatCapteur = 2;

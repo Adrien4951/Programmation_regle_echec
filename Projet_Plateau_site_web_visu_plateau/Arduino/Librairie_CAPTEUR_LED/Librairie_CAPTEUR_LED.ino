@@ -37,12 +37,57 @@
 #include "ModeJEU.h"
 
 
+
+
+//----------------bouton------------------//
+// Définition des pins pour les 5 boutons
+const int pinsBoutons[5] = { 12, 4, 16, 17, 39 };  //12 = gauche, 4 ok, 16 droite
+
+// Variables de flags (volatile car modifiées dans une interruption)
+volatile bool boutonPresse[5] = { false, false, false, false, false };
+unsigned long dernierAppui[5] = { 0, 0, 0, 0, 0 };
+const int debounceDelay = 200;  // 200ms pour éviter les rebonds mécaniques
+
+
+enum Etape { MENU_PRINCIPAL,
+             SOUS_MENU,
+             EN_JEU };
+Etape etapeActuelle = MENU_PRINCIPAL;
+
+// Navigation
+int indexMode = 0;   // 0:1J, 1:2J, 2:Calib, 3:EnLigne, 4:Exo
+int indexParam = 0;  // Curseur dans le sous-menu
+bool modeEdition = false;
+
+const char* modes[] = { "1 Joueur", "2 Joueurs", "Calibration", "En Ligne", "Exercice" };
+
+// Paramètres (on utilise des variables globales pour les stocker)
+int paramDiff = 1;      // 1 à 3
+int paramTemps = 10;    // en minutes
+bool paramAide = true;  // Aide couleur
+
+// Fonctions d'interruption (une par bouton ou une générique)
+// IRAM_ATTR place la fonction dans la RAM rapide de l'ESP32
+void IRAM_ATTR isrBouton0() {
+  boutonPresse[0] = true;
+}
+void IRAM_ATTR isrBouton1() {
+  boutonPresse[1] = true;
+}
+void IRAM_ATTR isrBouton2() {
+  boutonPresse[2] = true;
+}
+void IRAM_ATTR isrBouton3() {
+  boutonPresse[3] = true;
+}
+void IRAM_ATTR isrBouton4() {
+  boutonPresse[4] = true;
+}
+
 //-----------variables globales------------//
 //-----bouton-----//
 
-int menuActuel = 0;
-const int MAX_MENU = 3;  // Nombre d'options
-String options[] = { "1. JOUER", "2. ROBOT", "3. TIMER", "4. EXIT" };
+
 
 
 
@@ -71,12 +116,25 @@ extern void clearEnPassantTarget();
 void setup() {
   // Initialisation de l'écran LCD
 
+  for (int i = 0; i < 5; i++) {
+    pinMode(pinsBoutons[i], INPUT_PULLUP);
+  }
+
+  // Attachement des interruptions
+  attachInterrupt(digitalPinToInterrupt(pinsBoutons[0]), isrBouton0, FALLING);
+  attachInterrupt(digitalPinToInterrupt(pinsBoutons[1]), isrBouton1, FALLING);
+  attachInterrupt(digitalPinToInterrupt(pinsBoutons[2]), isrBouton2, FALLING);
+  attachInterrupt(digitalPinToInterrupt(pinsBoutons[3]), isrBouton3, FALLING);
+  attachInterrupt(digitalPinToInterrupt(pinsBoutons[4]), isrBouton4, FALLING);
+
+
+
   Wire.begin();
   lcd.begin();
   lcd.backlight();
 
   lcd.setCursor(0, 0);
-  lcd.print("Echecs Ready");
+  lcd.print("Bienvenue");
   // Initialize serial communication
   Serial.begin(115200);
   while (!Serial) {
@@ -87,39 +145,97 @@ void setup() {
   strip.begin();             // Initialise la communication avec les LEDs
   strip.show();              // Éteint tout au démarrage
   strip.setBrightness(250);  // Luminosité à environ 20% pour 50 (pour économiser le courant via USB)
-  delay(5000);
-  Serial.println("offset");
-  for (uint8_t i = 0; i < 64; i++) {
-    offset(i);
-  }
 
   initPiece();
 
   // Initialiser la mémoire selon les pièces posées
 
-  for (uint8_t i = 0; i < 64; i++) {
+  /* for (uint8_t i = 0; i < 64; i++) {
     if (presence_pion_blanc(i)) memoire_plateau[i] = 1;
     else if (presence_pion_noir(i)) memoire_plateau[i] = 2;
     else memoire_plateau[i] = 0;
   }
-
+*/
   clearEnPassantTarget();
 }
 int plateauN1[64];
 int plateauN2[64];
+/*
 
+enum Etape { MENU_PRINCIPAL,
+             Calibration,
+             TwoPlayer,
+             OnePlayer,
+             OnLigne,
+             Exercice,
+             Lancer };
+uint8_t menu = 5;
+uint8_t Oneplayer = 5;  // difficulté bot, les blanc commence, aide couleur , go, retour
+uint8_t Twoplayer = 5;  // difficulté bot, temps, les blanc commence, aide couleur , go, retour
+uint8_t Onligne = 1;    // attende  de connexionmettre connecté
+uint8_t Exo = 7;        // attende  de connexionmettre connecté
+uint8_t Lance = 3, stop,
+        Etape etapeActuelle = MENU_PRINCIPAL;*/
 
 void loop() {
 
-  // gererMenu();
-  // fonction qui lance mode jeu tout y est
-  UpdateLED();
-  UpdateCapteur();
+  traiterBoutons();
+  if (etapeActuelle == EN_JEU) { //"1 Joueur", "2 Joueurs", "Calibration", "En Ligne", "Exercice" };
+
+    if (indexMode == 2) {
+      // --- MODE CALIBRATION ---//
+
+      lcd.clear();
+      lcd.setCursor(2, 0);
+      lcd.print("Enlever les");
+      lcd.setCursor(5, 1);
+      lcd.print("pieces");
+      delay(1000);
+      for (uint8_t i = 0; i < 64; i++) {
+        offset(i);
+      }
+      lcd.clear();
+      lcd.setCursor(8, 1);
+      lcd.print("OK");
+      delay(1000);
+      etapeActuelle = MENU_PRINCIPAL;
+    } else if (indexMode == 3) {
+      // --- MODE EN LIGNE ---
+      //maFonctionEnLigne();
+    } else if (indexMode == 4) {
+      // --- MODE Exercice ---
+      UpdateLED();
+      UpdateCapteur();
+    }
+    else if (indexMode == 0) {
+      // --- MODE 1 joueur ---
+            UpdateLED();
+            UpdateCapteur();
+    }
+    else if (indexMode == 1) {
+      // --- MODE 2 joueur ---
+    }
+    
+    else {
+      // --- MODES DE JEU (1J, 2J, Exo) ---
+      // Ici ton code habituel de lecture des 64 capteurs
+      //lecture64Capteurs();
+    }
+
+  } else {
+    // On est dans les menus, on peut ajouter un petit delay
+    // pour ne pas faire chauffer l'ESP32 inutilement
+    delay(10);
+  }
+
+  //UpdateLED();
+  //UpdateCapteur();
 }
 
 
 void UpdateCapteur() {
   for (uint8_t i = 0; i < 64; i++) {
+    traiterBoutons();
     uint8_t etatCapteur = 0;
     if (presence_pion_blanc(i)) etatCapteur = 1;
     else if (presence_pion_noir(i)) etatCapteur = 2;
@@ -222,21 +338,180 @@ void UpdateCapteur() {
       }
     }
     if (cmd == "GO") {
-      initPiece();
-      for (uint8_t i = 0; i < 64; i++) {
-        if (presence_pion_blanc(i)) memoire_plateau[i] = 1;
-        else if (presence_pion_noir(i)) memoire_plateau[i] = 2;
-        else memoire_plateau[i] = 0;
-      }
-
-      clearEnPassantTarget();
+      reinitialiserPartie();
     }
     if (cmd == "offset") {
       for (uint8_t i = 0; i < 64; i++) {
         offset(i);
       }
-      Serial.println("Fin offset");
     }
   }
 }
 
+
+
+void reinitialiserPartie() {
+  Serial.println("Reinitialisation de la partie...");
+
+  // 1. Remettre les pièces à leurs positions initiales (logique)
+  //GOinitPiece();
+
+  // 2. Réinitialiser les variables de contrôle du jeu
+  caseSoulevee = -1;
+  tourDesBlancs = true;  // On commence par les blancs
+  clearEnPassantTarget();
+  // Vider le tableau des coups possibles (si applicable dans votre regle_echec.h)
+  // for(int i=0; i<64; i++) coupPossible[i] = 0;
+
+  // 3. Mettre à jour la mémoire du plateau (capteurs)
+  for (uint8_t i = 0; i < 64; i++) {
+    if (presence_pion_blanc(i)) memoire_plateau[i] = 1;
+    else if (presence_pion_noir(i)) memoire_plateau[i] = 2;
+    else memoire_plateau[i] = 0;
+
+    // On synchronise aussi plateauN2 pour éviter des mouvements fantômes au départ
+    plateauN2[i] = memoire_plateau[i];
+  }
+  initPiece();
+
+  // 4. Nettoyer les LEDs et l'affichage
+  strip.clear();
+  strip.show();
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Nouvelle Partie");
+  delay(1000);
+  lcd.setCursor(0, 0);
+  lcd.print("Blancs jouent  ");
+
+  Serial.println("Partie Reinitialisee !");
+}
+
+void traiterBoutons() {
+  bool g = false, o = false, d = false;
+  if (boutonPresse[0]) {
+    g = true;
+    boutonPresse[0] = false;
+  }
+  if (boutonPresse[1]) {
+    o = true;
+    boutonPresse[1] = false;
+  }
+  if (boutonPresse[2]) {
+    d = true;
+    boutonPresse[2] = false;
+  }
+  if (!g && !o && !d) return;
+
+  switch (etapeActuelle) {
+    case MENU_PRINCIPAL:
+      if (g) indexMode = (indexMode > 0) ? indexMode - 1 : 4;
+      if (d) indexMode = (indexMode < 4) ? indexMode + 1 : 0;
+      if (o) {
+        // Calibration (2) et En Ligne (3) n'ont pas de sous-menu
+        if (indexMode == 2 || indexMode == 3) etapeActuelle = EN_JEU;
+        else {
+          etapeActuelle = SOUS_MENU;
+          indexParam = 0;
+        }
+      }
+      break;
+
+    case SOUS_MENU:
+      if (!modeEdition) {
+        // Navigation entre les paramètres (Diff, Temps, Aide, GO, Retour)
+        int maxParam = (indexMode == 1) ? 3 : 4;  // 2J a un paramètre de moins (pas de difficulté)
+        if (g) indexParam = (indexParam > 0) ? indexParam - 1 : maxParam;
+        if (d) indexParam = (indexParam < maxParam) ? indexParam + 1 : 0;
+
+        if (o) {
+          if (indexParam == maxParam - 1) etapeActuelle = EN_JEU;           // Bouton GO
+          else if (indexParam == maxParam) etapeActuelle = MENU_PRINCIPAL;  // Bouton Retour
+          else modeEdition = true;
+        }
+      } else {
+        // Modification des valeurs
+        modifierValeur(g, d);
+        if (o) modeEdition = false;
+      }
+      break;
+
+    case EN_JEU:
+      if (o) etapeActuelle = MENU_PRINCIPAL;
+      break;
+  }
+  rafraichirAffichage();
+}
+
+// Fonction utilitaire pour modifier les paramètres
+void modifierValeur(bool g, bool d) {
+  // On adapte selon le paramètre pointé par indexParam
+  if (indexParam == 0 && (indexMode == 0 || indexMode == 4)) {  // Difficulté
+    if (g && paramDiff > 1) paramDiff--;
+    if (d && paramDiff < 3) paramDiff++;
+  } else if (indexParam == 1 || (indexMode == 1 && indexParam == 0)) {  // Temps
+    if (g && paramTemps > 1) paramTemps -= 1;
+    if (d) paramTemps += 1;
+  } else if (indexParam == 2 || (indexMode == 1 && indexParam == 1)) {  // Aide
+    if (g || d) paramAide = !paramAide;
+  }
+}
+
+
+
+void rafraichirAffichage() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+
+  if (etapeActuelle == MENU_PRINCIPAL) {
+    lcd.print("MENU PRINCIPAL");
+    lcd.setCursor(0, 1);
+    lcd.print("> ");
+    lcd.print(modes[indexMode]);
+  }
+
+  else if (etapeActuelle == SOUS_MENU) {
+    lcd.print(modes[indexMode]);  // Rappel du mode en ligne 1
+    lcd.setCursor(0, 1);
+
+    // Logique d'affichage dynamique des lignes du sous-menu
+    if (indexMode == 0 || indexMode == 4) {  // 1J ou Exo
+      const char* pNames[] = { "Diff", "Temps", "Aide", "LANCER GO", "RETOUR" };
+      afficherLigneParam(pNames[indexParam]);
+    } else if (indexMode == 1) {  // 2J
+      const char* pNames[] = { "Temps", "Aide", "LANCER GO", "RETOUR" };
+      afficherLigneParam(pNames[indexParam]);
+    }
+  }
+
+  else if (etapeActuelle == EN_JEU) {
+    lcd.print("PARTIE LANCER");
+    lcd.setCursor(0, 1);
+    lcd.print("OK pour quitter");
+  }
+}
+
+void afficherLigneParam(const char* nom) {
+  lcd.print(nom);
+  if (modeEdition) lcd.print(": < >");
+  else lcd.print(": ");
+
+  // Affichage des valeurs selon le nom
+  if (strcmp(nom, "Diff") == 0) lcd.print(paramDiff);
+  if (strcmp(nom, "Temps") == 0) {
+    lcd.print(paramTemps);
+    lcd.print("m");
+  }
+  if (strcmp(nom, "Aide") == 0) lcd.print(paramAide ? "OUI" : "NON");
+}
+
+
+/*void afficherMenu() {
+  // Exemple avec LCD ou Serial
+  Serial.println("-----------------------");
+  Serial.println("   JOUER AUX ECHECS    ");  // Ligne 1 fixe
+  Serial.print("> ");
+  Serial.println(modes[modeActuel]);  // Ligne 2 défilante
+  Serial.println("-----------------------");
+}*/
