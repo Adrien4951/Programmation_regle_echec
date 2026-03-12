@@ -37,16 +37,17 @@
 #include "ModeJEU.h"
 #include <WiFi.h>
 #include <ArduinoWebsockets.h>
+#include <ArduinoJson.h>
 using namespace websockets;
 
-const char* WIFI_SSID     = "PC_Leni";       
-const char* WIFI_PASSWORD = "1234445CCCCC";  
+const char* WIFI_SSID = "PC_Leni";
+const char* WIFI_PASSWORD = "1234445CCCCC";
 
 
-const char* SERVER_IP   = "192.168.137.1";         
+const char* SERVER_IP = "192.168.137.1";
 const uint16_t SERVER_PORT = 5678;
 
-WebsocketsClient ws;  // client WebSocket global 
+WebsocketsClient ws;  // client WebSocket global
 
 //----------------bouton------------------//
 // Définition des pins pour les 5 boutons
@@ -200,6 +201,15 @@ uint8_t Exo = 7;        // attende  de connexionmettre connecté
 uint8_t Lance = 3, stop,
         Etape etapeActuelle = MENU_PRINCIPAL;*/
 bool lancementJEU = false;
+bool online = false;
+int departOnline;
+int arriveOnline;
+
+int x11;
+int y11;
+
+int x22;
+int y22;
 void loop() {
 
   traiterBoutons();
@@ -229,10 +239,96 @@ void loop() {
       lcd.print("Connexion ");
       lcd.setCursor(5, 1);
       lcd.print("server");
+      WiFi.mode(WIFI_STA);
+
+      WiFi.disconnect(true, true);
+      delay(300);
+      WiFi.setSleep(false);
+
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+      while (WiFi.status() != WL_CONNECTED) {
+        Serial.print(".");
+        delay(500);
+      }
+      lcd.clear();
+      lcd.setCursor(2, 0);
+      lcd.print("Connecte");
+      lcd.setCursor(0, 1);
+      lcd.print(WiFi.localIP());
+      delay(1000);
+      bool ok = ws.connect(SERVER_IP, SERVER_PORT, "/");
+      if (ok) {
+        Serial.println("WebSocket CONNECTE");
+        lcd.clear();
+        lcd.setCursor(2, 0);
+        lcd.print("Connecte");
+        lcd.setCursor(0, 1);
+        lcd.print("WebSocket");
+      } else {
+        lcd.clear();
+        lcd.setCursor(2, 0);
+        lcd.print("Impossible");
+        lcd.setCursor(0, 1);
+        lcd.print("WebSocket");
+      }
+
+      //Fonction Rx WS : affiche les messages reçus du serveur
+
+      ws.onMessage([](WebsocketsMessage message) {
+        // 1. On récupère le texte brut du message
+        String jsonString = message.data();
+        Serial.print("RX WS Brut : ");
+        Serial.println(jsonString);
+
+        // 2. On crée un document JSON pour lire les données
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, jsonString);
+
+        // Sécurité : si le serveur envoie un truc bizarre, on ignore
+        if (error) {
+          Serial.print("Erreur de lecture JSON : ");
+          Serial.println(error.c_str());
+          return;
+        }
+
+        // 3. On regarde quel type de message on a reçu
+        String type = doc["type"];
+
+        // --- CAS 1 : On reçoit un coup à jouer (de Lichess ou de la page Web) ---
+        if (type == "move") {
+          String from = doc["from"];  // ex: "e2"
+          String to = doc["to"];      // ex: "e4"
+
+          // 4. LA CONVERSION INVERSE (Texte -> Coordonnées)
+          // from[0] est la lettre ('e'), from[1] est le chiffre ('2')
+          x11 = from[0] - 'a';
+          y11 = from[1] - '1';
+
+          x22 = to[0] - 'a';
+          y22 = to[1] - '1';
+
+          Serial.print("♟️ Ordre du serveur reçu ! Déplacer la pièce de (");
+          Serial.print(x11);
+          Serial.print(",");
+          Serial.print(y11);
+          Serial.print(") vers (");
+          Serial.print(x22);
+          Serial.print(",");
+          Serial.print(y22);
+          Serial.println(")");
+        }
+      });
 
 
-
-
+      //Ligne de code pour envoyer un message hello au serveur
+      String helloMsg = R"({"type":"hello","device":"esp32"})";
+      Serial.print("Envoi : ");
+      Serial.println(helloMsg);
+      ws.send(helloMsg);
+      online = true;
+      lancementJEU = true;
+      etapeActuelle = TIMER;
 
 
 
@@ -240,7 +336,7 @@ void loop() {
     } else if (indexMode == 4) {
       // --- MODE Exercice ---
       // Exemple : Initialisation assistée
-      initExercice(1);   
+      initExercice(1);
       /*for (int y = 0; y < 8; y++) {
         for (int x = 0; x < 8; x++) {
           if (plateau[x][y].estActive()) {
@@ -280,7 +376,6 @@ void loop() {
       UpdateCapteur();
     }
   }
-
 }
 
 
@@ -313,6 +408,14 @@ void UpdateCapteur() {
       else if (plateauN1[i] != 0 && plateauN2[i] == 0 && caseSoulevee != -1) {
         if ((estDansCoupPossible(i) && coupPossible[0] != 100) || i == caseSoulevee) {
           gererPosePiece(caseSoulevee, i, etatCapteur);
+          if (caseSoulevee != i) {
+            int x = caseSoulevee % 8;  // Le reste donne la colonne (X)
+            int y = caseSoulevee / 8;  // Le quotient donne la ligne (Y)
+
+            int x2 = i % 8;  // Le reste donne la colonne (X)
+            int y2 = i / 8;  // Le quotient donne la ligne (Y)
+            envoi_coups_server(7 - x, y, 7 - x2, y2);
+          }
           plateauN2[i] = plateauN1[i];
           caseSoulevee = -1;
           //coupPossible[0] = 0;
@@ -334,6 +437,14 @@ void UpdateCapteur() {
         if (estDansCoupPossible(i)) {
           // On appelle la même fonction : elle va écraser l'ancienne pièce par la nouvelle
           gererPosePiece(caseSoulevee, i, etatCapteur);
+          if (caseSoulevee != i) {
+            int x = caseSoulevee % 8;  // Le reste donne la colonne (X)
+            int y = caseSoulevee / 8;  // Le quotient donne la ligne (Y)
+
+            int x2 = i % 8;  // Le reste donne la colonne (X)
+            int y2 = i / 8;  // Le quotient donne la ligne (Y)
+            envoi_coups_server(7 - x, y, 7 - x2, y2);
+          }
           plateauN2[i] = plateauN1[i];  // La mémoire enregistre la nouvelle couleur
           caseSoulevee = -1;
           coupPossible[0] = 0;
@@ -351,7 +462,19 @@ void UpdateCapteur() {
         strip.show();
       }
     }
+    if (caseSoulevee == -1 && tourDesBlancs == false && indexMode == 3) {
+      if (ws.available()) {
+        ws.poll();
+        setuLED(departOnline, strip.Color(0, 255, 255));
+        setuLED(arriveOnline, strip.Color(0, 255, 255));
+      }
+
+      setuLED((7-x11) + (y11 * 8), strip.Color(0, 255, 255));
+      setuLED((7-x22) + (y22 * 8), strip.Color(0, 255, 255));
+      strip.show();
+    }
   }
+
   strip.show();
 
 
@@ -570,3 +693,42 @@ void afficherLigneParam(const char* nom) {
   Serial.println(modes[modeActuel]);  // Ligne 2 défilante
   Serial.println("-----------------------");
 }*/
+void envoi_coups_server(int x1, int y1, int x2, int y2) {
+
+  // --- 1. CONVERSION DES COORDONNÉES EN TEXTE (ex: 4,1 -> "e2") ---
+  // On additionne notre coordonnée au caractère de base ('a' ou '1')
+  char lettre_depart = 'a' + x1;
+  char chiffre_depart = '1' + y1;
+  String from = String(lettre_depart) + String(chiffre_depart);
+
+  char lettre_arrivee = 'a' + x2;
+  char chiffre_arrivee = '1' + y2;
+  String to = String(lettre_arrivee) + String(chiffre_arrivee);
+  // ---------------------------------------------------------------
+
+  // 2. On crée le document JSON
+  JsonDocument doc;
+  doc["source"] = "ESP32";
+  doc["type"] = "move";
+  doc["from"] = from;
+  doc["to"] = to;
+
+  // 3. On génère le texte JSON
+  String jsonPayload;
+  serializeJson(doc, jsonPayload);
+
+  // 4. Envoi au serveur Python via WebSocket
+  ws.send(jsonPayload);
+
+  // Trace de débogage pour vérifier sur le Moniteur Série
+  Serial.print("♟️ Mouvement detecte (");
+  Serial.print(x1);
+  Serial.print(",");
+  Serial.print(y1);
+  Serial.print(") -> (");
+  Serial.print(x2);
+  Serial.print(",");
+  Serial.print(y2);
+  Serial.print(") ===> JSON envoye : ");
+  Serial.println(jsonPayload);
+}

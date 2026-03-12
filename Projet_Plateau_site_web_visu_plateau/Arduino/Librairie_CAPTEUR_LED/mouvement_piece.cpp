@@ -127,6 +127,7 @@ void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
   int x2 = arrivee % 8;
   int y2 = arrivee / 8;
 
+
   // On vérifie si la couleur détectée par le capteur
   // correspond bien à la couleur de la pièce qu'on a soulevée
   if (depart == arrivee) return;
