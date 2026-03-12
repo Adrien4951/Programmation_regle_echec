@@ -1,6 +1,20 @@
 #include "mouvement_piece.h"
 #include "Arduino.h"
+#include <Arduino.h>
+#include <LiquidCrystal_I2C.h> // INDISPENSABLE ici
+#include "regle_echec.h"       // Pour TypePiece et Piece
+extern bool paramAide;
 extern void traiterBoutons();
+// Dans mouvement_piece.cpp, ne mettez PAS les paramètres (0x3F, 16, 2)
+extern LiquidCrystal_I2C lcd;
+enum Etape {
+    INITIALISATION,
+    EN_JEU,
+    FIN_DE_PARTIE
+};
+extern Etape etapeActuelle;
+//extern int etapeActuelle; // Remplacez int par le type réel (enum ?)
+//extern const int EN_JEU;  // Ou la valeur correspondante
 // Définition des variables extern
 Piece plateau[8][8];
 uint8_t coupPossible[28];
@@ -34,7 +48,10 @@ void UpdateLED() {
     //------ pas de piece presente et casesoulevee-----//
     if (etatCapteur == 0) {
       if (estDansCoupPossible(i) && caseSoulevee != -1 && coupPossible[0] != 100) {
-        setuLED(i, strip.Color(0, 0, 255));  // Bleu
+        if(paramAide){
+          setuLED(i, strip.Color(0, 0, 255));  // Bleu
+        }
+        
       } else {
         setuLED(i, strip.Color(0, 0, 0));
       }
@@ -44,7 +61,9 @@ void UpdateLED() {
     //------ piece presente et casesoulevee-----//
     else if (etatCapteur != 0 && caseSoulevee != -1) {
       if (estDansCoupPossible(i) && coupPossible[0] != 100) {
-        setuLED(i, strip.Color(0, 0, 255));  // Bleu
+         if(paramAide){
+          setuLED(i, strip.Color(0, 0, 255));  // Bleu
+        }
       } else {
         setuLED(i, strip.Color(25, 25, 25));
       }
@@ -187,12 +206,12 @@ void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee) {
         case Promotion:
 
           Serial.println("Promotion choisir la piece : 1DAME | 2FOU | 3tour");
-          uint16_t teinte = 0; // La teinte va de 0 à 65535
+          uint16_t teinte = 0;  // La teinte va de 0 à 65535
           while (Serial.available() == 0) {
             uint32_t couleurArcEnCiel = strip.ColorHSV(teinte);
             // On utilise ta fonction setuLED sur la case 5
             setuLED(coordVersIndex(x2, y2), couleurArcEnCiel);
-            strip.show();  // Indispensable pour rafraîchir la couleur
+            strip.show();   // Indispensable pour rafraîchir la couleur
             teinte += 256;  // Vitesse de changement (plus c'est haut, plus c'est rapide)
             delay(10);      // Petit délai pour que l'œil puisse voir l'effet
           }
@@ -283,4 +302,91 @@ EtatJeu verifierEtatDuJeu(Couleur campAuTrait) {
   }
 
   return NORMAL;
+}
+// --- Helper function (doit être EN DEHORS de validerPlacementPiece) ---
+const char* nomTypePiece(TypePiece t) {
+    switch (t) {
+        case PION:     return "Pion";
+        case CAVALIER: return "Cavalier";
+        case FOU:      return "Fou";
+        case TOUR:     return "Tour";
+        case DAME:     return "Dame";
+        case ROI:      return "Roi";
+        default:       return "Vide";
+    }
+}
+void validerPlacementPiece(int x, int y) {
+  int index = x + (y * 8);
+  Piece &p = plateau[x][y]; // Référence à la pièce dans ton tableau
+
+  // 1. Vérifier s'il y a une pièce prévue à cet endroit
+  if (!p.estActive()) {
+    return; // Pas de pièce prévue, on sort
+  }
+
+  // 2. Affichage sur le LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Placez: ");
+  lcd.print(nomTypePiece(p.getType())); // Utilise une petite fonction helper
+  lcd.setCursor(0, 1);
+  lcd.print(p.getCouleur() == BLANC ? "BLANC" : "NOIR");
+  lcd.print(" en ");
+  lcd.print((char)('A' + x)); // Convertit 0 en 'A', 1 en 'B'...
+  lcd.print(y + 1);
+
+  // 3. Boucle d'attente (Blocker)
+  bool correct = false;
+  while (!correct) {
+    // Mettre la LED en ROUGE pour signaler l'attente
+    setuLED(index, strip.Color(255, 0, 0));
+    strip.show();
+
+    // Lecture des capteurs physiques
+    bool blancPresent = presence_pion_blanc(index);
+    bool noirPresent = presence_pion_noir(index);
+
+    // Vérification de la correspondance couleur
+    if (p.getCouleur() == BLANC && blancPresent) {
+      correct = true;
+    } 
+    else if (p.getCouleur() == NOIR && noirPresent) {
+      correct = true;
+    }
+
+    // IMPORTANT : On appelle traiterBoutons pour pouvoir annuler/quitter le menu
+    traiterBoutons();
+    //if (etapeActuelle != EN_JEU) return; 
+
+    delay(100); // Petite pause pour ne pas surcharger le processeur
+  }
+
+  // 4. Validation visuelle : on passe la LED en VERT puis couleur normale
+  setuLED(index, strip.Color(0, 255, 0));
+  strip.show();
+  delay(500);
+  
+  // Remettre la couleur d'origine (Blanc ou Jaune)
+  if (p.getCouleur() == BLANC) setuLED(index, strip.Color(255, 255, 255));
+  else setuLED(index, strip.Color(255, 255, 0));
+  strip.show();
+}
+
+
+void synchroniserPhysiqueEtAide() {
+  for (int y = 0; y < 8; y++) {
+    for (int x = 0; x < 8; x++) {
+      if (plateau[x][y].estActive()) {
+        // Cette fonction qu'on a fait avant va allumer la LED en rouge
+        // et attendre que le joueur pose la bonne pièce au bon endroit.
+        validerPlacementPiece(x, y); 
+      } else {
+        // Éteindre les cases vides
+        int index = x + (y * 8);
+        setuLED(index, strip.Color(0, 0, 0));
+        plateauN2[index] = 0;
+      }
+    }
+  }
+  strip.show();
 }

@@ -27,6 +27,7 @@ void gererLeveePiece(uint8_t index);
 void gererPosePiece(int8_t depart, uint8_t arrivee, uint8_t couleurPosee);
 bool estDansCoupPossible(uint8_t index);
 uint8_t coordVersIndex(uint8_t x, uint8_t y);
+void validerPlacementPiece(int x, int y);
 EtatJeu verifierEtatDuJeu(Couleur campAuTrait);
 
 // Fonctions utilitaires LED

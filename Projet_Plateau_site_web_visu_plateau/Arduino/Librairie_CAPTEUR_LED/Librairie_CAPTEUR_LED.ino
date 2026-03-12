@@ -35,23 +35,34 @@
 #include "RobotEchec.h"
 #include "mouvement_piece.h"
 #include "ModeJEU.h"
+#include <WiFi.h>
+#include <ArduinoWebsockets.h>
+using namespace websockets;
+
+const char* WIFI_SSID     = "PC_Leni";       
+const char* WIFI_PASSWORD = "1234445CCCCC";  
 
 
+const char* SERVER_IP   = "192.168.137.1";         
+const uint16_t SERVER_PORT = 5678;
 
+WebsocketsClient ws;  // client WebSocket global 
 
 //----------------bouton------------------//
 // Définition des pins pour les 5 boutons
 const int pinsBoutons[5] = { 12, 4, 16, 17, 39 };  //12 = gauche, 4 ok, 16 droite
 
 // Variables de flags (volatile car modifiées dans une interruption)
+// Temps anti-rebond en millisecondes (30ms à 50ms suffisent généralement)
+const unsigned long DEBOUNCE_DELAY = 250;
+volatile unsigned long dernierTempsInterruption[5] = { 0, 0, 0, 0, 0 };
 volatile bool boutonPresse[5] = { false, false, false, false, false };
-unsigned long dernierAppui[5] = { 0, 0, 0, 0, 0 };
-const int debounceDelay = 200;  // 200ms pour éviter les rebonds mécaniques
 
 
 enum Etape { MENU_PRINCIPAL,
              SOUS_MENU,
-             EN_JEU };
+             EN_JEU,
+             TIMER };
 Etape etapeActuelle = MENU_PRINCIPAL;
 
 // Navigation
@@ -60,7 +71,7 @@ int indexParam = 0;  // Curseur dans le sous-menu
 bool modeEdition = false;
 
 const char* modes[] = { "1 Joueur", "2 Joueurs", "Calibration", "En Ligne", "Exercice" };
-
+int profondeur = 3;
 // Paramètres (on utilise des variables globales pour les stocker)
 int paramDiff = 1;      // 1 à 3
 int paramTemps = 10;    // en minutes
@@ -69,13 +80,25 @@ bool paramAide = true;  // Aide couleur
 // Fonctions d'interruption (une par bouton ou une générique)
 // IRAM_ATTR place la fonction dans la RAM rapide de l'ESP32
 void IRAM_ATTR isrBouton0() {
-  boutonPresse[0] = true;
+  unsigned long tempsActuel = millis();
+  if (tempsActuel - dernierTempsInterruption[0] > DEBOUNCE_DELAY) {
+    boutonPresse[0] = true;
+    dernierTempsInterruption[0] = tempsActuel;
+  }
 }
 void IRAM_ATTR isrBouton1() {
-  boutonPresse[1] = true;
+  unsigned long tempsActuel = millis();
+  if (tempsActuel - dernierTempsInterruption[1] > DEBOUNCE_DELAY) {
+    boutonPresse[1] = true;
+    dernierTempsInterruption[1] = tempsActuel;
+  }
 }
 void IRAM_ATTR isrBouton2() {
-  boutonPresse[2] = true;
+  unsigned long tempsActuel = millis();
+  if (tempsActuel - dernierTempsInterruption[2] > DEBOUNCE_DELAY) {
+    boutonPresse[2] = true;
+    dernierTempsInterruption[2] = tempsActuel;
+  }
 }
 void IRAM_ATTR isrBouton3() {
   boutonPresse[3] = true;
@@ -176,11 +199,11 @@ uint8_t Onligne = 1;    // attende  de connexionmettre connecté
 uint8_t Exo = 7;        // attende  de connexionmettre connecté
 uint8_t Lance = 3, stop,
         Etape etapeActuelle = MENU_PRINCIPAL;*/
-
+bool lancementJEU = false;
 void loop() {
 
   traiterBoutons();
-  if (etapeActuelle == EN_JEU) { //"1 Joueur", "2 Joueurs", "Calibration", "En Ligne", "Exercice" };
+  if (etapeActuelle == EN_JEU) {  //"1 Joueur", "2 Joueurs", "Calibration", "En Ligne", "Exercice" };
 
     if (indexMode == 2) {
       // --- MODE CALIBRATION ---//
@@ -201,21 +224,45 @@ void loop() {
       etapeActuelle = MENU_PRINCIPAL;
     } else if (indexMode == 3) {
       // --- MODE EN LIGNE ---
+      lcd.clear();
+      lcd.setCursor(2, 0);
+      lcd.print("Connexion ");
+      lcd.setCursor(5, 1);
+      lcd.print("server");
+
+
+
+
+
+
+
       //maFonctionEnLigne();
     } else if (indexMode == 4) {
       // --- MODE Exercice ---
-      UpdateLED();
-      UpdateCapteur();
-    }
-    else if (indexMode == 0) {
+      // Exemple : Initialisation assistée
+      initExercice(1);   
+      /*for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+          if (plateau[x][y].estActive()) {
+            validerPlacementPiece(x, y);
+          }
+        }
+      }*/
+      lancementJEU = true;
+      etapeActuelle = TIMER;
+
+    } else if (indexMode == 0) {
       // --- MODE 1 joueur ---
-            UpdateLED();
-            UpdateCapteur();
-    }
-    else if (indexMode == 1) {
+      reinitialiserPartie();
+      lancementJEU = true;
+      etapeActuelle = TIMER;
+    } else if (indexMode == 1) {
       // --- MODE 2 joueur ---
+      reinitialiserPartie();
+      lancementJEU = true;
+      etapeActuelle = TIMER;
     }
-    
+
     else {
       // --- MODES DE JEU (1J, 2J, Exo) ---
       // Ici ton code habituel de lecture des 64 capteurs
@@ -227,9 +274,13 @@ void loop() {
     // pour ne pas faire chauffer l'ESP32 inutilement
     delay(10);
   }
+  if (etapeActuelle == TIMER) {
+    if (lancementJEU) {
+      UpdateLED();
+      UpdateCapteur();
+    }
+  }
 
-  //UpdateLED();
-  //UpdateCapteur();
 }
 
 
@@ -292,7 +343,7 @@ void UpdateCapteur() {
       }
     }
 
-    if (caseSoulevee == -1 && tourDesBlancs == false) {
+    if (caseSoulevee == -1 && tourDesBlancs == false && indexMode == 0) {
       CoupRobot decision = calculerMeilleurCoup(NOIR);
       if (decision.x1 != -1) {
         setuLED(coordVersIndex(decision.x1, decision.y1), strip.Color(0, 255, 255));
@@ -403,7 +454,7 @@ void traiterBoutons() {
     boutonPresse[2] = false;
   }
   if (!g && !o && !d) return;
-
+  delay(400);
   switch (etapeActuelle) {
     case MENU_PRINCIPAL:
       if (g) indexMode = (indexMode > 0) ? indexMode - 1 : 4;
@@ -428,7 +479,11 @@ void traiterBoutons() {
         if (o) {
           if (indexParam == maxParam - 1) etapeActuelle = EN_JEU;           // Bouton GO
           else if (indexParam == maxParam) etapeActuelle = MENU_PRINCIPAL;  // Bouton Retour
-          else modeEdition = true;
+          else if (indexMode == 4 && indexParam == 3) {                     // Mode Exercice + Bouton GO
+            //initExercice(1);                                        // paramDiff contient le numéro de l'exo (1 à 5)
+            profondeur = 2;
+            etapeActuelle = EN_JEU;
+          } else modeEdition = true;
         }
       } else {
         // Modification des valeurs

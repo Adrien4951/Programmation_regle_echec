@@ -7,6 +7,7 @@
 
 extern Piece plateau[8][8];
 void initPiece();
+void initExercice(int numExo);
 //bool MettrePiece(coordone)
 
 
